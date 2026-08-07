@@ -1,0 +1,279 @@
+# Cygwin Package Auto-Maintenance System — Specification
+
+## 1. Purpose
+
+For the package recipes managed in [yacp](https://github.com/fd00/yacp), automatically detect upstream version updates and automate everything from updating the cygport file, building, and creating a PR against yacp.
+
+## 2. Repository Layout
+
+Without using external storage, a database, or any paid service, the whole system is self-contained in **a single public git repository**.
+
+| Repository | Role |
+|---|---|
+| `fd00/yacp` (existing) | The package recipes themselves. The target that receives PRs from the automation system. |
+| A new public repo (`dorgann`) | The automation system itself. Consists of two branches: `main` and `gh-pages`. |
+
+### 2.1 `main` branch
+
+- The list of monitored packages (`packages.yml`)
+- The scripts that implement update checking, building, and PR creation
+- The GitHub Actions workflow definitions (`.github/workflows/`) that invoke them
+
+`packages.yml` is **not** a state file — it is simply an array of monitored package names (details in 4.2.2). The "currently packaged version" is fetched from yacp itself, and the "record of build failures" is fetched from Issues, each time they're needed, so there's no need for `packages.yml` to duplicate that state.
+
+### 2.2 `gh-pages` branch
+
+- A Cygwin-compatible binary repository (in `setup.ini` format) for distributing devel packages that are only available through yacp
+- Configured as a GitHub Pages publishing source, used as an additional site (User URL) for `setup-x86_64.exe` at build time
+
+## 3. Distributing devel packages (GitHub Pages)
+
+### 3.1 Why GitHub Pages
+
+The `install:` line in `setup.ini` specifies files as a **relative path** from the site's base URL (e.g. `x86_64/release/<pkg>/<pkg>-<version>.tar.xz`), and setup.exe walks that directory hierarchy as-is to download files ([setup.ini documentation](https://sourceware.org/cygwin-apps/setup.ini.html)).
+
+GitHub Releases asset URLs follow a fixed format, `.../releases/download/<tag>/<filename>`, which can't carry a sub-path, so that directory hierarchy can't be reproduced there — hence it was rejected. GitHub Pages can statically serve a repository's contents including its directory structure, which meets this requirement.
+
+The same technique (build packages in CI → generate repository metadata → publish via GitHub Pages) has precedent in APT/YUM repositories (e.g. [noports-apt](https://github.com/atsign-foundation/noports-apt)), so it is a technically established pattern.
+
+### 3.2 Setup procedure
+
+1. Place build artifacts using the naming convention `x86_64/release/<pkg>/<pkg>-<version>-<release>.tar.xz` plus `.hint` ([Cygwin package files](https://cygwin.com/packaging-package-files.html)).
+2. Use `mksetupini` from `calm` (`pip3 install git+https://cygwin.com/git/cygwin-apps/calm.git`) to generate `setup.ini`/`setup.bz2`/`setup.xz`. Since this isn't a repository with a full package set (it's an overlay), pass `--disable-check=missing-required-package,missing-depended-package` ([Cygwin Package Server](https://cygwin.com/package-server.html)).
+3. Push the result to the `gh-pages` branch and publish it via GitHub Pages.
+4. In the build job, specify it as an additional site with `setup-x86_64.exe -P <package> --site <official mirror> --site <Pages URL>` to resolve dependencies.
+
+> **Operational note**: step 3, "publish to gh-pages," is **done manually** for now and is not automated. There is no design where all dist artifacts are automatically pushed to gh-pages on a successful build.
+
+### 3.3 Capacity, bandwidth, and operational constraints
+
+- GitHub Pages: free for public repos. The published site has a 1GB size limit, with a soft bandwidth limit of 100GB/month. The default Jekyll build has a soft limit of "10 builds/hour," but **this doesn't apply when publishing via a custom GitHub Actions workflow** ([GitHub Pages limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits)).
+- Devel packages always keep **a single generation (`curr` only)**. When a new version is added, the old version's files are deleted (e.g. adding `libhoge-2.0` removes `libhoge-1.0`). The full yacp package set is never duplicated.
+
+**On `gh-pages` history management**: If binaries are only ever appended and never overwritten, git stores content by blob, so history has almost no effect on repository size. Size becomes a problem when files are *deleted* — under normal commit history, blobs for deleted files are still referenced from past commits and never get garbage-collected.
+
+However, this does not affect GitHub Pages' **1GB limit on the published site itself** (i.e. the actual size of the tree at HEAD) — the published size correctly shrinks once a deletion commit is made. What it does affect is the looser, softer guideline of a "recommended 1GB" for the *source* repository ([GitHub Pages limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits)).
+
+As noted above, this repository's operational pattern is "adding a new version almost always comes paired with deleting the old one" (keeping only one generation), so deletion isn't an exceptional event — it's business as usual. Since publishing to gh-pages is already a manual, irregular activity (4.4), the simplest approach that doesn't add operational overhead is to **rebuild the `gh-pages` branch down to a single commit and force-push it every time that manual step happens**. Since pushes aren't automated or frequent, rewriting history via force-push isn't a burden.
+
+## 4. Processing Flow
+
+### 4.1 Overview
+
+```
+[daily cron]
+  └─ check-updates job (one job, sequential)
+       - Check versions via Repology etc. for every package in packages.yml
+       - Compare recorded failures (Issues) against the latest version to decide whether a retry is needed
+       - Output the JSON list of "packages that need a build this time"
+  └─ build job (matrix, only starts if check-updates' output is non-empty)
+       - Runs as an independent job per package, in parallel (fail-fast: false)
+       - Updates the cygport file, builds, uploads artifacts
+       - On success: create a PR against yacp / close the corresponding Issue if any (reflecting the devel package to gh-pages is NOT automated — it's manual)
+       - On failure: file an Issue
+```
+
+### 4.2 Daily update check (check-updates)
+
+- Triggered once a day via `schedule: cron`.
+- For each package in `packages.yml`, decide in this order:
+  1. Fetch the **current version** from yacp itself (4.2.2).
+  2. Fetch the **latest version** from Repology / the GitHub Releases API (4.2.1).
+  3. If current == latest, **no update** (skip).
+  4. If current < latest, and there is already an open failure Issue (4.5) for that latest version, **skip** (already failed against the same version last time). Otherwise, **mark it for build**.
+- Output: a JSON array of package names to build. An empty array on days with no updates.
+
+#### 4.2.1 How to check upstream versions (finalized)
+
+**Repology is the baseline source, and for packages hosted on GitHub, the GitHub Releases API is used in addition.**
+
+- **Repology** ([API](https://repology.org/api)): The common, primary source of truth across all packages. Rate limit is 1 req/sec; bulk usage beyond roughly 1,000 req/day is discouraged (beyond that, using the database dump instead of the API is recommended). This check runs sequentially, with spacing, inside a single job.
+- **GitHub Releases API** ([REST API endpoints for releases](https://docs.github.com/en/rest/releases/releases)): Whether upstream is hosted on GitHub is not recorded manually in `packages.yml` — instead, the `HOMEPAGE`/`SRC_URI` fields of the package's cygport file in yacp are parsed every time to auto-detect a `github.com/<owner>/<repo>` pattern (this is read from the same file fetched in 4.2.2, so no extra repository access is needed). Only when detected, the following are additionally queried:
+  - `GET /repos/{owner}/{repo}/releases/latest` (returns the latest non-draft, non-prerelease release) is tried first.
+  - `GET /repos/{owner}/{repo}/tags` is a fallback for projects that only use tags and never publish releases.
+  - Since `tag_name` often has a prefix like `v1.2.3`, it is normalized before comparison, matching cygport's naming convention ([Package naming scheme](https://cygwin.com/packaging-package-files.html#naming)).
+  - Requests are authenticated with `GITHUB_TOKEN` on GitHub Actions. When authenticated, `GITHUB_TOKEN`'s rate limit is **1,000 req/hour per repository** ([Rate limits for the REST API](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#primary-rate-limit-for-github_token-in-github-actions)), so hitting that limit with one run per day is essentially inconceivable.
+  - There can be cases where `HOMEPAGE` points to a plain project site rather than GitHub and auto-detection fails, but that just falls back to judging by Repology alone, so it isn't fatal.
+- **When results from both sources are available**: the GitHub Releases API result is treated as the primary signal, with Repology used as a cross-check. If they agree, proceed as normal; **if they disagree, don't auto-decide — surface it via an Issue etc. and require manual confirmation** (this is aimed at reducing false positives from Repology misclassification or sync lag). Packages hosted somewhere other than GitHub continue to be judged by Repology alone.
+
+#### 4.2.2 `packages.yml` format and how the current version is obtained (finalized)
+
+`packages.yml` is a **simple array** of monitored package names.
+
+```yaml
+- foo
+- bar
+- baz
+```
+
+The "currently packaged version" is not stored in `packages.yml`; it's fetched each time from the corresponding package's cygport file in yacp itself (`fd00/yacp`), via the GitHub Contents API or a lightweight checkout, parsing variables such as `VERSION=`. Since `HOMEPAGE`/`SRC_URI` can be read at the same time, the GitHub auto-detection from 4.2.1 happens at this same point.
+
+This way, `packages.yml` only needs to be managed via PRs for adding/removing packages, and never needs to duplicate state like version info or Issue numbers (all state lives in yacp itself and in Issues).
+
+#### 4.2.3 Deliberately pausing version tracking (finalized)
+
+Because Repology aggregates package information across multiple distributions, if any one distribution adopts its own forked version numbering, that can be mistakenly judged as "the latest version." In such cases, it's fine to simply **comment out** the relevant line in `packages.yml` in YAML, temporarily pausing monitoring for that package.
+
+```yaml
+- foo
+# - bar  # v2.1 is a distro-specific fork's version number, not upstream. Commented out pending a decision.
+- baz
+```
+
+This has the side effect of stopping monitoring for the whole package (a real new version wouldn't be detected either), but that's accepted. The reasoning: by the time an official distribution has adopted a forked version, the upstream project itself is likely already inactive, and in that case the right move isn't to ignore it but to consider switching to follow the fork instead. In other words, this isn't "ignore the false positive and leave it," but rather "pause until a human decides whether to switch upstream to the fork" — and until that decision is made, a simple comment-out is sufficient. A finer-grained, per-version ignore mechanism (e.g. Issue-based) is not being introduced at this time.
+
+### 4.3 Build (matrix)
+
+- `needs.check-updates.outputs.packages` is expanded into `strategy.matrix.package` for parallel jobs.
+- `fail-fast: false` ensures one package's failure doesn't affect the others.
+- `if: needs.check-updates.outputs.packages != '[]'` guards against starting the job at all on days with zero updates (an empty matrix would otherwise error out — this guard is required). By rejecting the empty-array case, there is never a "no-op run" that iterates over the full monitored set every day. Within a single daily workflow run, the number of jobs dynamically scales with however many packages actually had updates.
+- `max-parallel` is tuned with the free tier's concurrent-job cap in mind (20 across the whole account, [Actions limits](https://docs.github.com/en/actions/reference/limits)) — Windows-minute billing isn't a concern since this is a public repo (see chapter 6).
+- Builds run on a Windows runner using cygport + xezat.
+
+### 4.4 On success
+
+- The updated cygport file, patches, and README are turned into a PR against yacp (using `peter-evans/create-pull-request`).
+- Build artifacts (dist) are uploaded as an Actions artifact, downloadable from the run page. **Retention stays at the repository's default (90 days)** and is not changed.
+- The **decision** of whether to publish something as a devel package on gh-pages (chapter 3) is not automated. If the decision is made to publish, the **actual work** happens via the manual `workflow_dispatch` workflow described in 4.4.2 (build artifacts are not mechanically funneled to gh-pages for everything).
+- If there's an open failure Issue for the same package, it is closed.
+
+Whether the PR is merged/rejected has nothing to do with whether the package gets published as a devel package on gh-pages (merging into yacp doesn't necessarily mean it should be published on gh-pages, and conversely a still-open PR might get its contents checked and published anyway). So the PR carries no gh-pages-publishing information. The 4.4.2 workflow is self-contained, looking only at `dorgann`'s own Actions artifacts.
+
+#### 4.4.1 Permissions required to create a PR against yacp (finalized)
+
+`peter-evans/create-pull-request` creates a branch against whichever repository was `actions/checkout`'d as of that step. By switching the checkout target from `dorgann` to yacp, both the branch and the PR end up created in yacp ([concepts-guidelines.md](https://github.com/peter-evans/create-pull-request/blob/main/docs/concepts-guidelines.md#creating-pull-requests-in-a-remote-repository)).
+
+```yaml
+- uses: actions/checkout@v6
+  with:
+    token: ${{ secrets.YACP_TOKEN }}
+    repository: fd00/yacp
+
+# cygport update etc. happens here
+
+- uses: peter-evans/create-pull-request@v8
+  with:
+    token: ${{ secrets.YACP_TOKEN }}
+```
+
+`dorgann`'s default `GITHUB_TOKEN` is only scoped to `dorgann`, so it cannot push to yacp as-is. Register a token with **`contents: write` / `pull-requests: write` permission on fd00/yacp** (a fine-grained PAT, or a GitHub App installation token) as a secret in `dorgann`, and pass it explicitly to both the checkout and create-pull-request steps. Since both repos are owned by the same account, there's no need to go through a fork (`push-to-fork`) — branches can be pushed directly to yacp.
+
+Note also that PRs created with the default `GITHUB_TOKEN` cannot trigger other workflows on `pull_request`/`push` (e.g. yacp's own CI checks) by design ([Triggering further workflow runs](https://github.com/peter-evans/create-pull-request/blob/main/docs/concepts-guidelines.md#triggering-further-workflow-runs)), which is another reason a PAT/App token is the right design here.
+
+#### 4.4.2 Publishing to gh-pages (semi-automated, finalized)
+
+The **decision** of whether to publish something as a devel package on gh-pages is made by a human, but **once that decision is made, the work (from fetching the artifact through to the force-push) is automated via `workflow_dispatch`**. This is self-contained around `dorgann`'s own Actions artifacts, independent of yacp's PR state (merged or not). Nothing is added on the yacp side.
+
+- The only input parameter is the **artifact ID** (`artifact_id`). Opening the download link for the target dist artifact on `dorgann`'s Actions run page reveals the artifact ID in the URL, which is passed in as-is. The package name and version can be read from the artifact's contents (filenames follow the 3.2 naming convention `<package>-<version>-<release>.tar.xz`), so there's no need to input them separately.
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_id:
+        description: "ID of the dist artifact to publish to gh-pages"
+        required: true
+        type: string
+```
+
+- What the workflow does:
+  1. Uses `artifact_id` to fetch the dist artifact from `dorgann`'s own Actions artifact API (`GET /repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip`).
+  2. Reads the package name and version from the extracted filenames, and replaces the contents of `x86_64/release/<package>/` with the new version's files (per the single-generation rule in 3.3, the existing old version is deleted).
+  3. Regenerates `setup.ini` with `mksetupini` (3.2).
+  4. Rebuilds the `gh-pages` branch down to a single commit and force-pushes it (3.3).
+- **Caveat**: since dist artifacts expire under the default 90-day retention (4.4), running this workflow more than 90 days after the build means the artifact will no longer be found. In that case, the package needs to be rebuilt.
+
+### 4.5 On failure (finalized)
+
+An Issue is filed, made up of three parts:
+
+**Label**: tagged `build-failed`, so the Issues screen can be filtered with `label:build-failed`.
+
+**Structured metadata at the top of the body**: the package name and version are embedded in the body in structured form, not as free text in the title. In addition to a human-readable Markdown table, a JSON blob is also included as an HTML comment to make parsing more reliable (a Markdown table can be mis-parsed if formatting breaks or if a log line happens to contain `|`, so the HTML comment is treated as the source of truth for machine parsing).
+
+```markdown
+<!-- dorgann-meta: {"package":"foo","version":"1.2.3"} -->
+
+| Field   | Value |
+|---------|-------|
+| Package | foo   |
+| Version | 1.2.3 |
+```
+
+The check-updates step extracts `package`/`version` from the `dorgann-meta` HTML comment of any open `build-failed` Issue via a regex, and compares it against the latest version (see 4.2). If the design only checked "does an Issue exist" without recording the version, then once upstream published a new version the build would be skipped forever, so it's essential to compare the recorded version against the latest one.
+
+**Build log excerpt**: since GitHub Actions logs disappear after their retention period, the failure log is copied into the Issue body. Since the full log would be verbose and could exceed the Issue body's limit (65,536 characters when created via the API — [community discussion #27190](https://github.com/orgs/community/discussions/27190)), it's **trimmed to roughly the last 200 lines** (`tail -n 200`), with an additional safety margin on total character count in case any single line is extremely long (e.g. verbose build-tool output). It's wrapped in `<details>` so the Issue doesn't look excessively long.
+
+````markdown
+<details>
+<summary>Build log (last 200 lines)</summary>
+
+```text
+(output of tail -n 200, further truncated with a total character-count cap as a safety margin)
+```
+
+</details>
+````
+
+A link to the corresponding Actions run is also kept in the body (a reference to the full log, as long as it's within the retention period).
+
+## 5. Implementation Policy (separating workflow YAML from scripts)
+
+- Workflow YAML files should only contain "task invocation" — actual logic (Repology queries, build logic, etc.) is factored out into scripts.
+  - Embedding logic in YAML doesn't get syntax highlighting or static analysis, and every edit requires an Actions run to verify.
+  - Scripts can be debugged locally and reused as-is when triggered manually via `workflow_dispatch`.
+- Ruby is the recommended language. Since xezat (written in Ruby) already has version-comparison and bump logic, the Repology-side "is this a new version" judgment can piggyback on it too (either directly, or added as an xezat subcommand), reusing existing know-how such as handling cygport's version notation.
+- Values are passed from scripts to GitHub Actions uniformly via `$GITHUB_OUTPUT`.
+- Boilerplate GitHub API work — creating PRs, searching/closing Issues, etc. — should prefer a proven Marketplace Action over a custom implementation.
+- Scripts take their input via CLI args/environment variables and are not directly dependent on the GitHub Actions context, so they remain reproducible when run locally.
+
+## 6. GitHub Actions cost/limits assumptions
+
+**Since this runs in a public repository, standard-runner (including Windows) Actions minutes and artifact storage are free and unlimited.** An earlier assumption of budget constraints (e.g. "effectively 1,000 Windows minutes/month") was based on treating this as a private repo — that doesn't apply to a public repo, so it's been corrected here.
+
+> GitHub Actions usage is free for self-hosted runners and for public repositories that use standard GitHub-hosted runners.
+> — [GitHub Actions billing](https://docs.github.com/billing/managing-billing-for-github-actions/about-billing-for-github-actions)
+
+Likewise, the Free plan's 500MB artifact-storage quota etc. applies to private repos — public repo build artifacts are exempt from that quota ([community discussion example](https://github.com/orgs/community/discussions/26438)). The only case where paying is worth considering is using GitHub-hosted "Larger runners" (which are always billed regardless of public/private).
+
+| Item | Detail | Source |
+|---|---|---|
+| Standard-runner Actions minutes (public repo) | Free, unlimited | [GitHub Actions billing](https://docs.github.com/billing/managing-billing-for-github-actions/about-billing-for-github-actions) |
+| Artifact storage (public repo) | Free, unlimited (the ~500MB private-repo quota doesn't apply) | Same as above, [community discussion #26438](https://github.com/orgs/community/discussions/26438) |
+| Larger runners | Always billed, public or private | Same as above |
+| Concurrent jobs (Free plan) | 20 across the whole account/org (shared with other repos' CI) | [Actions limits](https://docs.github.com/en/actions/reference/limits) |
+| Actions artifact/log retention | Default 90 days. Private repos can set 1–400 days; public repos max out at 90 | [Configuring the retention period](https://docs.github.com/en/organizations/managing-organization-settings/configuring-the-retention-period-for-github-actions-artifacts-and-logs-in-your-organization) |
+| GitHub Pages site size | Published site capped at 1GB (source repo recommended to stay under 1GB too) | [GitHub Pages limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits) |
+| GitHub Pages bandwidth | Soft limit of 100GB/month | Same as above |
+| Max runtime for a single job | 6 hours | [Actions limits](https://docs.github.com/en/actions/reference/limits) |
+| `GITHUB_TOKEN` REST API rate limit | 1,000 req/hour per repository (60 req/hour unauthenticated) | [Rate limits for the REST API](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#primary-rate-limit-for-github_token-in-github-actions) |
+
+Now that minutes/storage are effectively unlimited, there's no need to derive an upper bound on the number of monitored packages by budgeting Windows minutes. The two things that still need consideration are the concurrent-job cap (20 across the account) and GitHub Pages' site size/bandwidth (for devel package distribution).
+
+## 7. Implementation Roadmap
+
+Rather than implementing everything at once, validate incrementally, starting from the highest-risk part (whether a cygport build on Windows actually works in Actions).
+
+**Step 1: `workflow_dispatch` for a single package**
+
+Build a workflow that takes `package` and `version` as `workflow_dispatch` inputs, does a cygport bump and build via xezat on `windows-latest`, and just uploads the dist as an artifact. Including the version as an input lets us defer the entire Repology/GitHub Releases API version-judgment logic (4.2.1). PR creation against yacp (4.4.1) is also excluded at this stage — the focus is purely on validating "does the Windows build environment work in Actions."
+
+**Step 2: Add PR creation against yacp**
+
+Add branch push and PR creation to yacp (4.4, 4.4.1) to the Step 1 workflow. This is where the fine-grained PAT / GitHub App token setup and permissions get validated. `package`/`version` remain manual inputs.
+
+**Step 3: Automate version determination**
+
+Replace the manual `version` input with automatic determination via Repology / the GitHub Releases API (4.2.1). The input becomes just `package`.
+
+**Step 4: Daily cron and matrix expansion**
+
+Reusing the "process one package" logic built through Step 3, add a check-updates job (4.2) that scans all of `packages.yml`, and a build job that expands only the updated packages into a matrix (4.3), triggered automatically via `schedule: cron`.
+
+**Step 5: File an Issue on failure**
+
+Add Issue filing on build failure (label, metadata, log excerpt — 4.5), and skip logic for the next loop (4.2).
+
+**Step 6: Publish devel packages to gh-pages**
+
+Add the 4.4.2 `workflow_dispatch` workflow (takes an `artifact_id` and updates gh-pages). This is independent of Steps 1–5, so it can be slotted in at any point in the implementation order.

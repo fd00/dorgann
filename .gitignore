@@ -1,0 +1,11 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Ruby
+*.gem
+/.bundle/
+/vendor/bundle/
+
+# scratch area (not part of the repo)
+.tmp/
