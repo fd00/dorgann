@@ -3,8 +3,13 @@ name: build-package
 # Step 1 (doc/spec.md, chapter 7): a one-off workflow to validate that a
 # cygport build actually works on a windows-latest Actions runner. xezat
 # integration and PR creation against yacp are added in later steps.
-# Build dependencies, which vary per package, are specified manually via
-# cygwin_packages.
+#
+# Build dependencies are determined in two passes, mirroring how Cygwin's
+# own official CI (cygwin/scallywag) does it: a fixed base toolchain is
+# always installed first, then scripts/cygport_depends.sh asks cygport
+# itself (via `cygport <file> vars ...`) what extra packages the specific
+# cygport file needs. cygwin_packages remains available as a manual
+# fallback for whatever the auto-detection doesn't cover.
 
 on:
   workflow_dispatch:
@@ -18,7 +23,7 @@ on:
         required: true
         type: string
       cygwin_packages:
-        description: "Extra Cygwin packages to install (space-separated, e.g. gcc-g++ libfoo-devel)"
+        description: "Extra Cygwin packages to install on top of auto-detected ones (space-separated, e.g. libfoo-devel)"
         required: false
         type: string
         default: ""
@@ -36,14 +41,27 @@ jobs:
           repository: fd00/yacp
           path: yacp
 
-      - name: Install Cygwin
+      - name: Install Cygwin (base toolchain)
         uses: cygwin/cygwin-install-action@v6
         with:
-          packages: cygport util-linux sed ${{ inputs.cygwin_packages }}
+          # cygport itself already depends on autoconf/automake/libtool/
+          # make/binutils etc., but not on a compiler -- see doc/spec.md
+          # and scripts/cygport_depends.sh for why gcc isn't detected
+          # per-package.
+          packages: cygport util-linux sed gcc-core gcc-g++
 
       - name: Bump version
         id: bump
         run: bash -- scripts/bump_version.sh --dir "yacp/${{ inputs.package }}" --version "${{ inputs.version }}"
+
+      - name: Determine extra build dependencies
+        id: depends
+        run: bash -- scripts/cygport_depends.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
+
+      - name: Install Cygwin (extra dependencies)
+        uses: cygwin/cygwin-install-action@v6
+        with:
+          packages: ${{ steps.depends.outputs.extra_packages }} ${{ inputs.cygwin_packages }}
 
       - name: cygport build
         working-directory: yacp/${{ inputs.package }}
