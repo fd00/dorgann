@@ -102,17 +102,19 @@ jobs:
       - name: Install Cygwin (extra dependencies)
         uses: cygwin/cygwin-install-action@v6
         with:
-          # cmake/libicu-devel/pkg-config/zlib-devel/ruby-devel/
-          # libssl-devel are not for building the package -- they're for
-          # `gem install xezat` below (xezat depends on github-linguist
-          # -> rugged, which vendors + cmake-builds libgit2, always
-          # links zlib, needs ruby.h from ruby-devel to compile its own
-          # Ruby C extension against, and needs an HTTPS backend for its
-          # vendored libgit2 build (no GSSAPI on Cygwin, so OpenSSL via
-          # libssl-devel); and charlock_holmes, which needs ICU via
-          # pkg-config as libicu-devel's icu-i18n/icu-io/icu-uc .pc
-          # files).
-          packages: ${{ steps.depends.outputs.extra_packages }} ${{ inputs.cygwin_packages }} cmake libicu-devel pkg-config zlib-devel ruby-devel libssl-devel
+          # libicu-devel/pkg-config/zlib-devel/ruby-devel/libgit2-devel
+          # are not for building the package -- they're for `gem install
+          # xezat` below (xezat depends on github-linguist -> rugged,
+          # which needs ruby.h from ruby-devel to compile its own Ruby C
+          # extension against, and links against Cygwin's own libgit2
+          # package via pkg-config (RUGGED_USE_SYSTEM_LIBRARIES=1 below)
+          # rather than cmake-building its vendored copy -- that vendored
+          # build hit a Cygwin/CMake-specific "CMAKE_SIZEOF_VOID_P is
+          # unset" failure detecting the compiler's pointer size, and
+          # Cygwin's own libgit2-devel sidesteps it entirely; and
+          # charlock_holmes, which needs ICU via pkg-config as
+          # libicu-devel's icu-i18n/icu-io/icu-uc .pc files).
+          packages: ${{ steps.depends.outputs.extra_packages }} ${{ inputs.cygwin_packages }} libicu-devel pkg-config zlib-devel ruby-devel libgit2-devel
 
       - name: Compute xezat cache info
         id: xezat-cache-info
@@ -125,6 +127,8 @@ jobs:
           key: xezat-gem-${{ runner.os }}-${{ steps.xezat-cache-info.outputs.version_hash }}
 
       - name: Install xezat
+        env:
+          RUGGED_USE_SYSTEM_LIBRARIES: "1"
         run: bash -c "gem install --no-document xezat"
 
       - name: xezat prep
