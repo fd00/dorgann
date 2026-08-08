@@ -54,17 +54,19 @@ export __cygport_check_prog_req_nonfatal=1
 export cygport_no_error=1
 
 # Cygport variables like BUILD_REQUIRES are conventionally written across
-# multiple lines (e.g. `BUILD_REQUIRES="\n\tzlib-devel\n"`), so `declare -p`
-# output for them spans multiple physical lines too. Querying one variable
-# per `cygport ... vars` call lets us just take everything between the
-# first and last double-quote of that call's output, instead of needing a
-# line-based (or DOTALL-style) regex to find where a value starts and ends.
+# multiple lines (e.g. `BUILD_REQUIRES="\n\tzlib-devel\n"`). bash's `declare
+# -p` doesn't emit that as literal embedded newlines inside "..." -- it
+# switches to $'...' ANSI-C quoting with backslash-escaped control
+# characters instead (e.g. `declare -- BUILD_REQUIRES=$'\n\tzlib-devel\n'`,
+# confirmed directly against bash). Hand-parsing every quoting style
+# declare -p might choose is fragile, so just eval its output -- that's
+# the one thing guaranteed to reconstruct the value correctly, since
+# producing re-evaluable output is the entire point of `declare -p`.
 get_var() {
-  local name="$1" out value
-  out="$(cygport "$cygport_file" vars "$name")"
-  value="${out#*\"}"
-  value="${value%\"}"
-  printf '%s' "$value"
+  local name="$1" decl
+  decl="$(cygport "$cygport_file" vars "$name")"
+  [[ -n "$decl" ]] && eval "$decl"
+  [[ -v "$name" ]] && printf '%s' "${!name}"
 }
 
 build_requires="$(get_var BUILD_REQUIRES)"
