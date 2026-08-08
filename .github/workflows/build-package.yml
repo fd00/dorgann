@@ -80,5 +80,12 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.package }}-${{ inputs.version }}-dist
-          path: yacp/${{ inputs.package }}/**/dist/**
+          # A `**/dist/**` glob has to walk every subdirectory to find
+          # matches, including .../<pn>-<pv>-<pr>.x86_64/build/ -- which
+          # contains files coming out of the Cygwin build (e.g. a checked-
+          # out .gitattributes) that Node's fs.stat can't read on Windows
+          # ("EACCES: permission denied"), aborting the whole upload. The
+          # single `*` here only matches the one known directory-name
+          # pattern, so it never needs to look inside build/ at all.
+          path: yacp/${{ inputs.package }}/*.x86_64/dist/**
           if-no-files-found: error
