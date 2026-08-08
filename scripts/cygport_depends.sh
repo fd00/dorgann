@@ -53,12 +53,18 @@ cd "$dir"
 export __cygport_check_prog_req_nonfatal=1
 export cygport_no_error=1
 
-raw="$(cygport "$cygport_file" vars BUILD_REQUIRES DEPEND INHERITED CROSS_HOST)"
-
+# Cygport variables like BUILD_REQUIRES are conventionally written across
+# multiple lines (e.g. `BUILD_REQUIRES="\n\tzlib-devel\n"`), so `declare -p`
+# output for them spans multiple physical lines too. Querying one variable
+# per `cygport ... vars` call lets us just take everything between the
+# first and last double-quote of that call's output, instead of needing a
+# line-based (or DOTALL-style) regex to find where a value starts and ends.
 get_var() {
-  local name="$1"
-  # matches lines like: declare -- NAME="value"  /  declare -r NAME="value"
-  sed -n "s/^declare -[a-zA-Z-]* ${name}=\"\\(.*\\)\"\$/\\1/p" <<<"$raw" | head -1
+  local name="$1" out value
+  out="$(cygport "$cygport_file" vars "$name")"
+  value="${out#*\"}"
+  value="${value%\"}"
+  printf '%s' "$value"
 }
 
 build_requires="$(get_var BUILD_REQUIRES)"
