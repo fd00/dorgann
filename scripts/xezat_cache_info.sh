@@ -40,7 +40,11 @@
 set -euo pipefail
 
 gem_home="$(cygpath -w "$(ruby -e 'print Gem.user_dir')")"
-gem_bindir="$(cygpath -w "$(gem environment | sed -n 's/^ *- EXECUTABLE DIRECTORY: *//p')")"
+gem_env="$(gem environment)"
+echo "::group::gem environment"
+echo "$gem_env"
+echo "::endgroup::"
+gem_bindir="$(cygpath -w "$(sed -n 's/^ *- EXECUTABLE DIRECTORY: *//p' <<<"$gem_env")")"
 version_hash="$(cygcheck -c | sha256sum | cut -d' ' -f1)"
 
 echo "gem_home=$gem_home"
