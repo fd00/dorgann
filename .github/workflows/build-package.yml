@@ -74,13 +74,7 @@ jobs:
           packages: ${{ steps.depends.outputs.extra_packages }} ${{ inputs.cygwin_packages }}
 
       - name: cygport build
-        working-directory: yacp/${{ inputs.package }}
-        run: |
-          for step in download prep compile install package; do
-            echo "::group::cygport ${{ steps.bump.outputs.cygport_file }} $step"
-            bash -- cygport "${{ steps.bump.outputs.cygport_file }}" "$step"
-            echo "::endgroup::"
-          done
+        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
