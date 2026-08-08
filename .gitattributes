@@ -1,0 +1,6 @@
+# Force LF line endings on checkout regardless of the checking-out
+# machine's git config (e.g. Windows runners with core.autocrlf=true).
+# Without this, shell scripts checked out on windows-latest runners get
+# CRLF line endings, which breaks bash's line-continuation/here-doc
+# handling ("$'\r': command not found").
+* text=auto eol=lf
