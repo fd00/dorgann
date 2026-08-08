@@ -102,14 +102,17 @@ jobs:
       - name: Install Cygwin (extra dependencies)
         uses: cygwin/cygwin-install-action@v6
         with:
-          # cmake/libicu-devel/pkg-config/zlib-devel/ruby-devel are not
-          # for building the package -- they're for `gem install xezat`
-          # below (xezat depends on github-linguist -> rugged, which
-          # vendors + cmake-builds libgit2, always links zlib, and needs
-          # ruby.h from ruby-devel to compile its own Ruby C extension
-          # against; and charlock_holmes, which needs ICU via pkg-config
-          # as libicu-devel's icu-i18n/icu-io/icu-uc .pc files).
-          packages: ${{ steps.depends.outputs.extra_packages }} ${{ inputs.cygwin_packages }} cmake libicu-devel pkg-config zlib-devel ruby-devel
+          # cmake/libicu-devel/pkg-config/zlib-devel/ruby-devel/
+          # libssl-devel are not for building the package -- they're for
+          # `gem install xezat` below (xezat depends on github-linguist
+          # -> rugged, which vendors + cmake-builds libgit2, always
+          # links zlib, needs ruby.h from ruby-devel to compile its own
+          # Ruby C extension against, and needs an HTTPS backend for its
+          # vendored libgit2 build (no GSSAPI on Cygwin, so OpenSSL via
+          # libssl-devel); and charlock_holmes, which needs ICU via
+          # pkg-config as libicu-devel's icu-i18n/icu-io/icu-uc .pc
+          # files).
+          packages: ${{ steps.depends.outputs.extra_packages }} ${{ inputs.cygwin_packages }} cmake libicu-devel pkg-config zlib-devel ruby-devel libssl-devel
 
       - name: Compute xezat cache info
         id: xezat-cache-info
