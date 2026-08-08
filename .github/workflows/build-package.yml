@@ -32,6 +32,16 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
+      # windows-latest runners default to core.autocrlf=true, which
+      # rewrites LF to CRLF on checkout and breaks bash reading any script
+      # file directly ("$'\r': command not found") -- including yacp's own
+      # .cygport files, which cygport itself sources as a bash script.
+      # dorgann's own files are additionally covered by .gitattributes,
+      # but that only applies within this repo, not the fd00/yacp checkout
+      # below, so this has to be set globally before either checkout runs.
+      - name: Disable line-ending conversion on checkout
+        run: git config --global core.autocrlf false
+
       - name: Checkout dorgann
         uses: actions/checkout@v7
 
