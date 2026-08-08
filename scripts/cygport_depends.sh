@@ -65,8 +65,19 @@ export cygport_no_error=1
 get_var() {
   local name="$1" decl
   decl="$(cygport "$cygport_file" vars "$name")"
-  [[ -n "$decl" ]] && eval "$decl"
-  [[ -v "$name" ]] && printf '%s' "${!name}"
+  # `&&` here (rather than `if`) would make the function's own exit status
+  # equal to the `[[ ]]` test's status whenever it's false, since this is
+  # the function's last command -- and under `set -e`, that trips errexit
+  # on the *function call*, unlike the same `&&` as a bare top-level
+  # statement (which set -e's && / || exemption does cover). `if` always
+  # returns 0 when its condition is false and there's no `else`.
+  if [[ -n "$decl" ]]; then
+    eval "$decl"
+  fi
+  if [[ -v "$name" ]]; then
+    printf '%s' "${!name}"
+  fi
+  return 0
 }
 
 build_requires="$(get_var BUILD_REQUIRES)"
