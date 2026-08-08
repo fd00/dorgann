@@ -7,14 +7,15 @@
 #   - gem_home: the Windows-style path to Ruby's gem directory, for
 #     actions/cache's `path:` input (which needs a real filesystem path,
 #     not a Cygwin one).
-#   - gem_bindir: where `gem install` puts executables. This is NOT
-#     Gem.user_dir + "/bin" -- confirmed by comparing against the actual
-#     "gem install" warning ("You don't have /home/runneradmin/bin in
-#     your PATH") in a real run: user-install executables go to a fixed
-#     $HOME/bin, not nested under the versioned gem_home path. `gem
-#     environment`'s "EXECUTABLE DIRECTORY" line is RubyGems' own
-#     authoritative answer, so that's parsed instead of re-deriving the
-#     path from Gem.* APIs. Each workflow step is its own bash invocation
+#   - gem_bindir: where `gem install` puts executables. Neither
+#     Gem.user_dir + "/bin" nor `gem environment`'s "EXECUTABLE
+#     DIRECTORY" (/usr/bin) match this -- Cygwin's system-wide gem
+#     config forces every install to add `--user-install --bindir
+#     $HOME/bin` (visible as `gem environment`'s GEM CONFIGURATION entry
+#     `"gem" => "--user-install --bindir /home/runneradmin/bin"`),
+#     overriding RubyGems' own default and confirmed by the actual "gem
+#     install" warning ("You don't have /home/runneradmin/bin in your
+#     PATH") in a real run. Each workflow step is its own bash invocation
 #     (started fresh via `bash -- script.sh`, not a login/interactive
 #     shell), so nothing sources a profile that would normally add this
 #     to PATH -- without it, e.g. `xezat prep` fails with "xezat: command
@@ -40,11 +41,7 @@
 set -euo pipefail
 
 gem_home="$(cygpath -w "$(ruby -e 'print Gem.user_dir')")"
-gem_env="$(gem environment)"
-echo "::group::gem environment"
-echo "$gem_env"
-echo "::endgroup::"
-gem_bindir="$(cygpath -w "$(sed -n 's/^ *- EXECUTABLE DIRECTORY: *//p' <<<"$gem_env")")"
+gem_bindir="$(cygpath -w "$(ruby -e 'print File.join(Dir.home, "bin")')")"
 version_hash="$(cygcheck -c | sha256sum | cut -d' ' -f1)"
 
 echo "gem_home=$gem_home"
