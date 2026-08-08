@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Runs a cygport file through the full build pipeline: download, prep,
-# compile, install, package. `all` is not used because it does not include
-# a fetch/download step -- sources must already be present before prep/all
-# runs (see doc/spec.md).
+# Runs the rest of the cygport build pipeline: compile, install, package.
+# download/prep are done beforehand by `xezat prep` (see xezat_prep.sh),
+# which also copies the package's README into the build tree -- running
+# them again here would re-apply patches that are already applied and
+# fail. `all` is not used either, for the same reason (it includes prep).
 #
 # Usage (paths relative to the package directory, e.g. yacp/googletest):
 #   cygport_build.sh --dir yacp/googletest --file googletest-1.18.0-1bl1.cygport
@@ -26,7 +27,7 @@ done
 cd "$dir"
 [[ -f "$cygport_file" ]] || { echo "No such file: $dir/$cygport_file" >&2; exit 1; }
 
-for step in download prep compile install package; do
+for step in compile install package; do
   echo "::group::cygport $cygport_file $step"
   cygport "$cygport_file" "$step"
   echo "::endgroup::"

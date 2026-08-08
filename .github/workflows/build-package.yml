@@ -1,8 +1,30 @@
 name: build-package
 
 # Step 1 (doc/spec.md, chapter 7): a one-off workflow to validate that a
-# cygport build actually works on a windows-latest Actions runner. xezat
-# integration and PR creation against yacp are added in later steps.
+# cygport build actually works on a windows-latest Actions runner. PR
+# creation against yacp is added in a later step.
+#
+# xezat handles fetching/preparing sources (`xezat prep`, before the
+# build) and regenerating the package's README/changelog (`xezat bump`,
+# after it). `xezat prep` additionally copies the package directory's
+# README into the build tree, which is what `xezat bump` later reads and
+# appends a changelog entry to -- that copy step is why xezat prep is
+# used here instead of a plain `cygport ... download`/`prep` (which
+# would leave xezat bump editing a stale/absent README). Using xezat at
+# all was originally deferred as an unverified Windows-Ruby risk (xezat
+# depends on github-linguist, which pulls in native-extension gems:
+# rugged and charlock_holmes), but now runs against a real Cygwin
+# ruby/gem (installed below) rather than the windows-latest runner's
+# preinstalled native Windows Ruby, which is a much more plausible
+# environment for those gems to build in -- xezat itself only works
+# under genuine Cygwin anyway, since it sources the real /usr/bin/cygport
+# as a bash script.
+#
+# Compiling rugged/charlock_holmes's native extensions from scratch is
+# slow (cmake-building vendored libgit2, linking ICU), so the gem
+# install is cached across runs -- see scripts/xezat_cache_info.sh for
+# why the cache key includes a hash of every installed Cygwin package's
+# version rather than being a fixed string.
 #
 # Build dependencies are determined in two passes, mirroring how Cygwin's
 # own official CI (cygwin/scallywag) does it: a fixed base toolchain is
@@ -80,10 +102,42 @@ jobs:
       - name: Install Cygwin (extra dependencies)
         uses: cygwin/cygwin-install-action@v6
         with:
-          packages: ${{ steps.depends.outputs.extra_packages }} ${{ inputs.cygwin_packages }}
+          # cmake/libicu-devel/pkg-config/zlib-devel/ruby-devel are not
+          # for building the package -- they're for `gem install xezat`
+          # below (xezat depends on github-linguist -> rugged, which
+          # vendors + cmake-builds libgit2, always links zlib, and needs
+          # ruby.h from ruby-devel to compile its own Ruby C extension
+          # against; and charlock_holmes, which needs ICU via pkg-config
+          # as libicu-devel's icu-i18n/icu-io/icu-uc .pc files).
+          packages: ${{ steps.depends.outputs.extra_packages }} ${{ inputs.cygwin_packages }} cmake libicu-devel pkg-config zlib-devel ruby-devel
+
+      - name: Compute xezat cache info
+        id: xezat-cache-info
+        run: bash -- scripts/xezat_cache_info.sh
+
+      - name: Cache xezat gem install
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.xezat-cache-info.outputs.gem_home }}
+          key: xezat-gem-${{ runner.os }}-${{ steps.xezat-cache-info.outputs.version_hash }}
+
+      - name: Install xezat
+        run: bash -c "gem install --no-document xezat"
+
+      - name: xezat prep
+        run: bash -- scripts/xezat_prep.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
 
       - name: cygport build
         run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
+
+      - name: Update README via xezat
+        run: bash -- scripts/xezat_bump.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
+
+      # Persisting this (via a PR against yacp) is Step 2's job -- for now
+      # this just makes it easy to eyeball whether xezat bump did the
+      # right thing.
+      - name: Show README diff
+        run: git -C yacp diff -- ${{ inputs.package }}/README
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
