@@ -57,8 +57,17 @@ jobs:
           # cygport itself already depends on autoconf/automake/libtool/
           # make/binutils etc., but not on a compiler -- see doc/spec.md
           # and scripts/cygport_depends.sh for why gcc isn't detected
-          # per-package.
-          packages: cygport util-linux sed gcc-core gcc-g++
+          # per-package. python3/ruby/rubygems aren't for building the
+          # package itself either: cygport's own packaging phase
+          # (pkg_info.cygpart) unconditionally probes for ruby+gem to
+          # generate runtime dependency metadata, and separately scans
+          # installed files for a python3 shebang to do the same -- e.g.
+          # yacp/last ships C++ binaries alongside python3-shebang helper
+          # scripts. Without a real Cygwin ruby/gem here, that probe was
+          # instead finding the windows-latest runner's preinstalled
+          # native Windows Ruby, whose RubyGems API cygport's script
+          # doesn't expect (NoMethodError on Gem.default_dirs).
+          packages: cygport util-linux sed gcc-core gcc-g++ python3 ruby rubygems
 
       - name: Bump version
         id: bump
