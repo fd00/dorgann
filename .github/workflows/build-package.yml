@@ -229,6 +229,7 @@ jobs:
           git -C yacp diff --cached -- ${{ inputs.package }}
 
       - name: Upload dist artifact
+        id: upload
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.package }}-${{ inputs.version }}-dist
@@ -288,7 +289,20 @@ jobs:
           # commit message convention (checked against its git history).
           commit-message: "${{ inputs.package }}-${{ inputs.version }}"
           title: "${{ inputs.package }}-${{ inputs.version }}"
+          # The dorgann-meta HTML comment mirrors the machine-parseable
+          # metadata convention doc/spec.md 4.5 already uses for failure
+          # Issues -- an HTML comment survives copy/paste and markdown
+          # reformatting better than expecting something to scrape a
+          # human-facing code block. artifact-id is actions/upload-
+          # artifact's own step output (v4+), not something computed here.
           body: |
             Automated version bump to `${{ inputs.version }}`, built and validated by [dorgann](https://github.com/fd00/dorgann).
 
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            <!-- dorgann-meta: {"artifact_id":"${{ steps.upload.outputs.artifact-id }}"} -->
+
+            To publish this build as a devel package on gh-pages:
+            ```
+            gh workflow run publish-devel.yml -f artifact_id=${{ steps.upload.outputs.artifact-id }} --repo ${{ github.repository }}
+            ```

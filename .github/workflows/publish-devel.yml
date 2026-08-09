@@ -16,6 +16,18 @@ name: publish-devel
 # Independent of yacp's PR state (doc/spec.md 4.4): this only looks at
 # dorgann's own Actions artifacts, so it works whether or not the
 # corresponding yacp PR has been merged, is still open, or exists at all.
+#
+# Two ways in: workflow_dispatch (manual, `inputs.artifact_id`) and
+# repository_dispatch (automatic -- yacp's own notify-dorgann.yml sends a
+# "publish-devel" event with `client_payload.artifact_id` when it sees one
+# of dorgann's PRs get merged, extracting the artifact_id from that PR's
+# own dorgann-meta comment, doc/spec.md 4.4.1). Auto-publish-on-merge
+# revises the original "publish is a separate human decision, independent
+# of merge state" design (doc/spec.md 4.4) -- accepted deliberately, not
+# an oversight.
+#
+# FUTURE: exclude packages whose LICENSE doesn't permit binary
+# redistribution before publishing (not implemented yet).
 
 on:
   workflow_dispatch:
@@ -24,6 +36,8 @@ on:
         description: "ID of the dist artifact to publish (from the Actions run's Artifacts section download-link URL)"
         required: true
         type: string
+  repository_dispatch:
+    types: [publish-devel]
 
 permissions:
   contents: write
@@ -39,7 +53,12 @@ jobs:
       - name: Download dist artifact
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash -- scripts/download_dist_artifact.sh --repo ${{ github.repository }} --artifact-id "${{ inputs.artifact_id }}" --dest artifact
+          # workflow_dispatch populates inputs.artifact_id;
+          # repository_dispatch leaves it empty and populates
+          # client_payload.artifact_id instead -- exactly one of the two
+          # is ever set, depending on which trigger fired this run.
+          ARTIFACT_ID: ${{ inputs.artifact_id || github.event.client_payload.artifact_id }}
+        run: bash -- scripts/download_dist_artifact.sh --repo ${{ github.repository }} --artifact-id "$ARTIFACT_ID" --dest artifact
 
       # gh-pages is checked out (or bootstrapped, on the very first
       # publish) into its own directory rather than as this job's
