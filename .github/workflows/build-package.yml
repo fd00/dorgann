@@ -165,6 +165,23 @@ jobs:
       - name: Update README via xezat
         run: bash -- scripts/xezat_bump.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
 
+      # cygport's `install` step (above) already runs postinst as part of
+      # itself (see cygport's own src_postinst.cygpart/bin/cygport.in:
+      # `install` runs `src_install && __src_postinst`), which is what
+      # embeds $C/README into $D as /usr/share/doc/Cygwin/$PN.README --
+      # but at that point $C/README was still the pre-bump copy xezat
+      # prep put there. Now that xezat bump has rewritten it, postinst
+      # needs to run again on its own (cygport also exposes it as a
+      # standalone step for exactly this) to re-embed the updated README
+      # into $D, and package needs to run again too so the actual dist
+      # archive picks up that change -- otherwise the shipped package
+      # would carry the stale changelog forever.
+      - name: cygport postinst
+        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}" --step postinst
+
+      - name: cygport package (with updated README)
+        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}" --step package
+
       # xezat bump only rewrites the build tree's own README copy ($C),
       # never the package directory's tracked one -- see xezat_port.sh for
       # why. `xezat port` is what copies it (plus the cygport file itself
