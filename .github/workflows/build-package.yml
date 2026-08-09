@@ -153,6 +153,9 @@ jobs:
       - name: cygport build
         run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
 
+      - name: Validate build via xezat
+        run: bash -- scripts/xezat_validate.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
+
       - name: Update README via xezat
         run: bash -- scripts/xezat_bump.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
 
