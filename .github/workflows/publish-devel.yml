@@ -1,0 +1,85 @@
+name: publish-devel
+
+# Step 6 (doc/spec.md, chapter 7 / section 4.4.2): publishes a dorgann-
+# built devel package to gh-pages as a Cygwin-compatible binary
+# repository (setup.ini format, doc/spec.md chapter 3), for distribution
+# via `setup-x86_64.exe --site <Pages URL>`. The DECISION of whether to
+# publish a given build is made by a human (that's what running this
+# workflow *is*), but the mechanical work from there -- fetch the
+# artifact, lay it out in the release-area convention, regenerate
+# setup.ini via calm, and commit/force-push gh-pages -- is fully
+# automated.
+#
+# Runs on ubuntu-latest, not windows-latest: none of this needs Cygwin --
+# calm/mksetupini is plain Python, and the gh-pages update is plain git.
+#
+# Independent of yacp's PR state (doc/spec.md 4.4): this only looks at
+# dorgann's own Actions artifacts, so it works whether or not the
+# corresponding yacp PR has been merged, is still open, or exists at all.
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_id:
+        description: "ID of the dist artifact to publish (from the Actions run's Artifacts section download-link URL)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dorgann
+        uses: actions/checkout@v7
+
+      - name: Download dist artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash -- scripts/download_dist_artifact.sh --repo ${{ github.repository }} --artifact-id "${{ inputs.artifact_id }}" --dest artifact
+
+      # gh-pages is checked out (or bootstrapped, on the very first
+      # publish) into its own directory rather than as this job's
+      # primary checkout, since it gets entirely rebuilt as a single
+      # orphan commit below (doc/spec.md 3.3) -- there's no reason to
+      # disturb the primary checkout's branch/history for that.
+      - name: Checkout gh-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash -- scripts/checkout_gh_pages.sh --repo ${{ github.repository }} --dir gh-pages
+
+      - name: Lay out release area
+        id: layout
+        run: bash -- scripts/layout_release_area.sh --artifact-dir artifact --gh-pages-dir gh-pages
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # mksetupini is calm's own console_scripts entry point (setup.cfg),
+      # so this puts a `mksetupini` command directly on PATH -- no need
+      # for calm's own PYTHONPATH-based invocation wrapper (calm.sh).
+      - name: Install calm
+        run: pip install git+https://github.com/cygwin/calm.git
+
+      - name: Generate setup.ini
+        run: bash -- scripts/generate_setup_ini.sh --gh-pages-dir gh-pages
+
+      - name: Commit and force-push gh-pages
+        run: bash -- scripts/publish_gh_pages.sh --dir gh-pages --message "Publish ${{ steps.layout.outputs.published_packages }} (dorgann run ${{ github.run_id }})"
+
+      # Best-effort and non-fatal: GITHUB_TOKEN's `pages: write`
+      # permission is designed around the newer artifact-based Pages
+      # deploy flow (actions/deploy-pages), and it's untested as of this
+      # writing whether it's sufficient for this classic branch-source
+      # config call too -- if not, this is also just a one-time manual
+      # Settings > Pages step, which shouldn't block the actual
+      # packaging/publishing work above.
+      - name: Enable GitHub Pages
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash -- scripts/ensure_pages_enabled.sh --repo ${{ github.repository }}
