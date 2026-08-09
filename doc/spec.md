@@ -290,6 +290,17 @@ Reusing the "process one package" logic built through Step 3, add a check-update
 
 Add Issue filing on build failure (label, metadata, log excerpt — 4.5), and skip logic for the next loop (4.2).
 
-**Step 6: Publish devel packages to gh-pages**
+**Step 6: Publish devel packages to gh-pages (done)**
 
-Add the 4.4.2 `workflow_dispatch` workflow (takes an `artifact_id` and updates gh-pages). This is independent of Steps 1–5, so it can be slotted in at any point in the implementation order.
+Add the 4.4.2 `workflow_dispatch` workflow (takes an `artifact_id` and updates gh-pages). This is independent of Steps 1–5, so it can be slotted in at any point in the implementation order — implemented here right after Step 2, out of numeric order, since it doesn't depend on Steps 3-5 at all.
+
+Implemented as `.github/workflows/publish-devel.yml` / `scripts/{download_dist_artifact,checkout_gh_pages,layout_release_area,generate_setup_ini,publish_gh_pages,ensure_pages_enabled}.sh`. Runs on `ubuntu-latest`, not `windows-latest` — none of this needs Cygwin, since `calm`/`mksetupini` is plain Python (confirmed against calm's own `setup.cfg`: a real installable package with a `mksetupini` console_scripts entry point, `pip install git+https://github.com/cygwin/calm.git` puts it straight on `PATH`) and the gh-pages update is plain git.
+
+Two gaps from the original 3.2 design turned up only once actually run against a real build:
+
+- cygport's own `dist/` layout (`dist/<PN>/[<subpkg>/]<file>.{hint,tar.xz}`, confirmed against cygport's `pkg_pkg.cygpart` and a real build's artifact) isn't the `<rel_area>/x86_64/release/<pkg>/` layout `mksetupini` expects (confirmed against calm's `package.py:collect_files_package_dir`, which asserts a literal `release` path component). Reshaping this is normally calm's own upload-processing job on the real Cygwin infrastructure, which isn't in use here, so `layout_release_area.sh` does it directly: every directory *directly* containing a `.hint` file is one Cygwin package, named after that directory's own basename (covers both the plain case and subpackages like `<PN>-debuginfo`).
+- `mksetupini --disable-check` needs `missing-build-depended-package` in addition to the two named in the original 3.2 text (`missing-required-package`, `missing-depended-package`) — cygport's generated `*-src.hint` always records `build-depends: cygport` plus whatever the package itself needs (e.g. `zlib-devel`), and neither of the other two checks cover that; without it `mksetupini` refused to write `setup.ini` at all.
+
+`gh-pages` didn't exist yet as of implementing this, so `checkout_gh_pages.sh` bootstraps it as a fresh orphan branch on first run rather than requiring it to be created manually first. Enabling GitHub Pages itself, however, could *not* be automated: `GITHUB_TOKEN`'s `pages: write` permission is scoped to the newer artifact-deploy flow (`actions/deploy-pages`) and returns `403 Resource not accessible by integration` against the classic branch-source config endpoint (`POST /repos/{owner}/{repo}/pages`) — confirmed by an actual run. `ensure_pages_enabled.sh`'s attempt is kept as a `continue-on-error` best effort in case that ever changes, but enabling Pages (Settings → Pages → Deploy from a branch → `gh-pages` / `/`) is, in practice, still a one-time manual step.
+
+Verified end-to-end: published `fd00/yacp`'s `last` package (from the same artifact used to verify Step 2) to gh-pages, and confirmed the live site actually serves it (`.../x86_64/setup.ini`, HTTP 200, with correct `install:`/`source:`/`depends2:` entries for `last`/`last-debuginfo`/`last-src`).
