@@ -161,9 +161,19 @@ jobs:
       # shows untracked files at all, only changes to files it already
       # tracks. Stage everything first so the new files show up too; this
       # also leaves the changes staged for Step 2's eventual commit/PR.
+      #
+      # cygport's own build tree (<PN>-<PV>-<PR>.<arch>/) lives inside the
+      # package directory too, and `git add -A` walks into it -- it's not
+      # meant to be committed (and Upload dist artifact still needs to
+      # read it below, so it can't just be deleted here), and it contains
+      # a symlink that Windows Git can't index ("Function not
+      # implemented"), which aborts the whole `git add` rather than just
+      # skipping that one file. Exclude it via pathspec instead. The
+      # trailing "/**" (not just "/*") is required for the exclude to
+      # match paths *inside* the directory, not just the directory itself.
       - name: Show diff
         run: |
-          git -C yacp add -A -- ${{ inputs.package }}
+          git -C yacp add -A -- ${{ inputs.package }} ":(exclude)${{ inputs.package }}/*.x86_64/**"
           git -C yacp diff --cached -- ${{ inputs.package }}
 
       - name: Upload dist artifact
