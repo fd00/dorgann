@@ -5,12 +5,18 @@ name: build-package
 # creation against yacp is added in a later step.
 #
 # xezat handles fetching/preparing sources (`xezat prep`, before the
-# build) and regenerating the package's README/changelog (`xezat bump`,
-# after it). `xezat prep` additionally copies the package directory's
-# README into the build tree, which is what `xezat bump` later reads and
-# appends a changelog entry to -- that copy step is why xezat prep is
-# used here instead of a plain `cygport ... download`/`prep` (which
-# would leave xezat bump editing a stale/absent README). Using xezat at
+# build), regenerating the package's README/changelog (`xezat bump`,
+# after it), and copying the build's results (cygport file, README,
+# src.patch) back into the package directory (`xezat port`, after that).
+# `xezat prep` copies the package directory's README into the build tree,
+# which is what `xezat bump` later reads and appends a changelog entry to
+# -- that copy step is why xezat prep is used here instead of a plain
+# `cygport ... download`/`prep` (which would leave xezat bump editing a
+# stale/absent README). `xezat bump` only ever writes back to that same
+# build-tree copy, never to the package directory -- `xezat port` is what
+# copies it (and the cygport file itself, and any src.patch) back out;
+# without it, the package directory's tracked README would never actually
+# change. Using xezat at
 # all was originally deferred as an unverified Windows-Ruby risk (xezat
 # depends on github-linguist, which pulls in native-extension gems:
 # rugged and charlock_holmes), but now runs against a real Cygwin
@@ -140,11 +146,18 @@ jobs:
       - name: Update README via xezat
         run: bash -- scripts/xezat_bump.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
 
+      # xezat bump only rewrites the build tree's own README copy ($C),
+      # never the package directory's tracked one -- see xezat_port.sh for
+      # why. `xezat port` is what copies it (plus the cygport file itself
+      # and any src.patch) back.
+      - name: Copy build results back via xezat port
+        run: bash -- scripts/xezat_port.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
+
       # Persisting this (via a PR against yacp) is Step 2's job -- for now
-      # this just makes it easy to eyeball whether xezat bump did the
+      # this just makes it easy to eyeball whether xezat bump/port did the
       # right thing.
-      - name: Show README diff
-        run: git -C yacp diff -- ${{ inputs.package }}/README
+      - name: Show diff
+        run: git -C yacp diff -- ${{ inputs.package }}
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
