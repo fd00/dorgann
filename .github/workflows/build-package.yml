@@ -242,6 +242,23 @@ jobs:
           path: yacp/${{ inputs.package }}/*.x86_64/dist/**
           if-no-files-found: error
 
+      # peter-evans/create-pull-request stashes any leftover uncommitted/
+      # untracked changes (via `git stash push --include-untracked`)
+      # after committing the add-paths'd files, to restore the working
+      # tree afterwards -- and that stash walks the cygport build tree
+      # too, hitting the same symlink Windows Git can't index that Show
+      # diff's `git add -A` already had to route around ("Function not
+      # implemented", confirmed by the actual failure in run
+      # 31302451178). Unlike a plain `git add -A`, there's no pathspec
+      # input to make the action's own stash skip it, so remove the
+      # build tree instead, via cygport's own `clean` step (== `finish`,
+      # `rm -rf` of the whole per-arch work directory -- safe to run now
+      # since Upload dist artifact above already read what it needed out
+      # of it). Cygwin's own `rm -rf` handles the symlink fine; it's only
+      # Windows Git's tooling that can't.
+      - name: cygport clean
+        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}" --step clean
+
       # Placed after the artifact upload so a problem here (still
       # unvalidated as of Step 2 -- first real use of YACP_SECRET) can't
       # cost the dist artifact too.
