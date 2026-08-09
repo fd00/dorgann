@@ -55,7 +55,7 @@ jobs:
         id: layout
         run: bash -- scripts/layout_release_area.sh --artifact-dir artifact --gh-pages-dir gh-pages
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
 
