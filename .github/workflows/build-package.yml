@@ -155,9 +155,16 @@ jobs:
 
       # Persisting this (via a PR against yacp) is Step 2's job -- for now
       # this just makes it easy to eyeball whether xezat bump/port did the
-      # right thing.
+      # right thing. bump_version.sh renamed the old .cygport/.src.patch on
+      # disk (a plain filesystem rename, not `git mv`), so their new names
+      # are untracked as far as git is concerned -- plain `git diff` never
+      # shows untracked files at all, only changes to files it already
+      # tracks. Stage everything first so the new files show up too; this
+      # also leaves the changes staged for Step 2's eventual commit/PR.
       - name: Show diff
-        run: git -C yacp diff -- ${{ inputs.package }}
+        run: |
+          git -C yacp add -A -- ${{ inputs.package }}
+          git -C yacp diff --cached -- ${{ inputs.package }}
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
