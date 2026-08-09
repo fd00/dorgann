@@ -97,6 +97,16 @@ jobs:
           # doesn't expect (NoMethodError on Gem.default_dirs).
           packages: cygport util-linux sed gcc-core gcc-g++ python3 ruby rubygems
 
+      # Must run after Cygwin is installed (and installed early, before
+      # anything that could invoke `cygport fetch`, i.e. `xezat prep`
+      # below): a bare `bash` on windows-latest resolves to Git for
+      # Windows' bash until cygwin-install-action puts Cygwin's own bash
+      # ahead of it on PATH, and the two have different $HOME values --
+      # writing this config under the wrong one would make cygport never
+      # see it.
+      - name: Configure cygport
+        run: bash -- scripts/configure_cygport.sh
+
       - name: Bump version
         id: bump
         run: bash -- scripts/bump_version.sh --dir "yacp/${{ inputs.package }}" --version "${{ inputs.version }}"
