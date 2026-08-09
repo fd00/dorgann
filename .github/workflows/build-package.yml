@@ -1,8 +1,9 @@
 name: build-package
 
-# Step 1 (doc/spec.md, chapter 7): a one-off workflow to validate that a
-# cygport build actually works on a windows-latest Actions runner. PR
-# creation against yacp is added in a later step.
+# Step 1 (doc/spec.md, chapter 7): validates that a cygport build
+# actually works on a windows-latest Actions runner.
+# Step 2: adds PR creation against yacp (doc/spec.md 4.4.1). package/
+# version are still manual workflow_dispatch inputs -- that's Step 3.
 #
 # xezat handles fetching/preparing sources (`xezat prep`, before the
 # build), regenerating the package's README/changelog (`xezat bump`,
@@ -78,6 +79,13 @@ jobs:
         with:
           repository: fd00/yacp
           path: yacp
+          # dorgann's own default GITHUB_TOKEN is scoped to dorgann only
+          # and can't push to yacp -- YACP_SECRET is a fine-grained PAT
+          # scoped to fd00/yacp with contents:write/pull-requests:write
+          # (doc/spec.md 4.4.1). Needed on checkout (not just on the
+          # Create Pull Request step below) since that's what determines
+          # which credentials `git push` inside this checkout uses.
+          token: ${{ secrets.YACP_SECRET }}
 
       - name: Install Cygwin (base toolchain)
         uses: cygwin/cygwin-install-action@v6
@@ -189,14 +197,16 @@ jobs:
       - name: Copy build results back via xezat port
         run: bash -- scripts/xezat_port.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
 
-      # Persisting this (via a PR against yacp) is Step 2's job -- for now
-      # this just makes it easy to eyeball whether xezat bump/port did the
-      # right thing. bump_version.sh renamed the old .cygport/.src.patch on
-      # disk (a plain filesystem rename, not `git mv`), so their new names
-      # are untracked as far as git is concerned -- plain `git diff` never
-      # shows untracked files at all, only changes to files it already
-      # tracks. Stage everything first so the new files show up too; this
-      # also leaves the changes staged for Step 2's eventual commit/PR.
+      # Mainly so a run's log makes it easy to eyeball whether xezat
+      # bump/port did the right thing, without waiting for the Create
+      # Pull Request step below or opening its PR. bump_version.sh
+      # renamed the old .cygport/.src.patch on disk (a plain filesystem
+      # rename, not `git mv`), so their new names are untracked as far as
+      # git is concerned -- plain `git diff` never shows untracked files
+      # at all, only changes to files it already tracks. Stage everything
+      # first so the new files show up too. (Create Pull Request does its
+      # own staging independently via add-paths, so this step's staging
+      # isn't load-bearing for the PR itself -- it's just for this log.)
       #
       # cygport's own build tree (<PN>-<PV>-<PR>.<arch>/) lives inside the
       # package directory too, and `git add -A` walks into it -- it's not
@@ -231,3 +241,37 @@ jobs:
           # pattern, so it never needs to look inside build/ at all.
           path: yacp/${{ inputs.package }}/*.x86_64/dist/**
           if-no-files-found: error
+
+      # Placed after the artifact upload so a problem here (still
+      # unvalidated as of Step 2 -- first real use of YACP_SECRET) can't
+      # cost the dist artifact too.
+      #
+      # add-paths defaults to `git add -A` over the whole checkout if
+      # omitted, which would re-add the build tree/cache junk Show diff
+      # deliberately excludes above -- pass the identical pathspec here
+      # so this step's own staging (it doesn't reuse Show diff's) stays
+      # consistent with it.
+      #
+      # branch is deterministic (package+version, not run id), so
+      # re-running this workflow for the same package/version updates
+      # the existing PR/branch instead of piling up duplicates --
+      # create-pull-request's own designed behavior for this case.
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.YACP_SECRET }}
+          path: yacp
+          add-paths: |
+            ${{ inputs.package }}
+            :(exclude)${{ inputs.package }}/*.x86_64/**
+            :(exclude)${{ inputs.package }}/*.x86_64.yml
+          branch: dorgann/${{ inputs.package }}-${{ inputs.version }}
+          delete-branch: true
+          # "<PN>-<PV>", no colon or verb, matches yacp's own existing
+          # commit message convention (checked against its git history).
+          commit-message: "${{ inputs.package }}-${{ inputs.version }}"
+          title: "${{ inputs.package }}-${{ inputs.version }}"
+          body: |
+            Automated version bump to `${{ inputs.version }}`, built and validated by [dorgann](https://github.com/fd00/dorgann).
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
