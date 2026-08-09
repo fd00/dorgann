@@ -17,6 +17,14 @@
 # overwrites the tracked files in place rather than creating a copy
 # elsewhere.
 #
+# `xezat port`'s --portdir option is only consulted as a fallback: it
+# unconditionally tries to read its config file first (~/.xezat/config.yml
+# by default, via Xezat::Command::Port#get_port_directory ->
+# Xezat#config), and YAML.load_file raises Errno::ENOENT if that file
+# doesn't exist -- which it never does on a fresh Actions runner. An empty
+# (but valid) config file avoids that crash while leaving portdir unset
+# there, so our --portdir below is what actually gets used.
+#
 # Usage (paths relative to the package directory, e.g. yacp/googletest):
 #   xezat_port.sh --dir yacp/googletest --file googletest-1.18.0-1bl1.cygport
 
@@ -37,6 +45,12 @@ done
 [[ -n "$cygport_file" ]] || { echo "--file is required" >&2; exit 1; }
 
 parent="$(dirname "$(cd "$dir" && pwd)")"
+
+config_file="$HOME/.xezat/config.yml"
+if [[ ! -f "$config_file" ]]; then
+  mkdir -p "$(dirname "$config_file")"
+  printf 'xezat: {}\n' > "$config_file"
+fi
 
 cd "$dir"
 [[ -f "$cygport_file" ]] || { echo "No such file: $dir/$cygport_file" >&2; exit 1; }
