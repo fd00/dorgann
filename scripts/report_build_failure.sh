@@ -43,8 +43,15 @@ done
 
 [[ -n "$repo" ]] || { echo "--repo is required" >&2; exit 1; }
 [[ -n "$package" ]] || { echo "--package is required" >&2; exit 1; }
-[[ -n "$version" ]] || { echo "--version is required" >&2; exit 1; }
 [[ -n "$run_url" ]] || { echo "--run-url is required" >&2; exit 1; }
+
+# --version is allowed to be empty (not required, unlike the other args)
+# specifically for build-package.yml's own Bump version/Detect existing
+# cygport steps (doc/spec.md 4.6) -- when *those* are what fails (a bad
+# --version input, or a branch whose .cygport filename doesn't parse),
+# there's no version to report yet, but the failure should still get
+# filed rather than this script itself erroring out on a missing arg.
+version="${version:-(unknown)}"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

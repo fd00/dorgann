@@ -15,7 +15,10 @@
 # Input: CLI args only (no GitHub Actions context dependency, so this can be
 # run and debugged locally, given a Cygwin-flavored `rename`/`sed` on PATH).
 # Output: prints the new .cygport basename, and if GITHUB_OUTPUT is set,
-# appends `cygport_file=<basename>` there.
+# appends `cygport_file=<basename>` and `version=<new_version>` there --
+# the latter mirrors detect_cygport_file.sh's own `version` output, so
+# build-package.yml can read whichever of the two actually ran without
+# caring which one it was (branch-rebuild mode, doc/spec.md 4.6).
 
 set -euo pipefail
 
@@ -94,5 +97,8 @@ new_cygport_file="${new_basename}.cygport"
 echo "Bumped $pn: $old_version -> $new_version (${#sibling_files[@]} file(s))"
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-  echo "cygport_file=$new_cygport_file" >> "$GITHUB_OUTPUT"
+  {
+    echo "cygport_file=$new_cygport_file"
+    echo "version=$new_version"
+  } >> "$GITHUB_OUTPUT"
 fi

@@ -53,9 +53,15 @@ on:
         required: true
         type: string
       version:
-        description: "New version (PV) to build"
-        required: true
+        description: "New version (PV) to build. Required unless branch is given."
+        required: false
         type: string
+        default: ""
+      branch:
+        description: "Branch-rebuild mode (doc/spec.md 4.6): an existing yacp branch to build as-is (e.g. dorgann/libucl-0.9.4), after a manual fix has been pushed onto it -- skips the version bump/rename and auto-detects the version instead. Leave empty for the normal fresh-bump flow."
+        required: false
+        type: string
+        default: ""
       cygwin_packages:
         description: "Extra Cygwin packages to install on top of auto-detected ones (space-separated, e.g. libfoo-devel)"
         required: false
@@ -90,6 +96,14 @@ jobs:
         with:
           repository: fd00/yacp
           path: yacp
+          # Empty (the default, when `branch` isn't given) is the same as
+          # omitting `ref` entirely as far as actions/checkout is
+          # concerned -- it falls back to fd00/yacp's own default branch.
+          # Branch-rebuild mode (doc/spec.md 4.6) points this at an
+          # existing dorgann/<pkg>-<ver> branch instead, so a human's
+          # manual fix (BUILD_REQUIRES, a PKG_NAMES rename for an ABI
+          # bump, ...) already committed there gets picked up as-is.
+          ref: ${{ inputs.branch }}
           # dorgann's own default GITHUB_TOKEN is scoped to dorgann only
           # and can't push to yacp -- YACP_SECRET is a fine-grained PAT
           # scoped to fd00/yacp with contents:write/pull-requests:write
@@ -126,13 +140,26 @@ jobs:
       - name: Configure cygport
         run: bash -- scripts/configure_cygport.sh
 
+      # Two mutually exclusive paths, selected by whether `branch` was
+      # given (doc/spec.md 4.6) -- exactly one of these two steps runs.
+      # Every step below reads through the concatenation of both steps'
+      # outputs (e.g. "${{ steps.bump.outputs.X }}${{ steps.detect.outputs.X }}"),
+      # which is always exactly one non-empty value since a skipped step's
+      # outputs are the empty string, not an error -- so nothing below
+      # needs to know which of the two paths actually ran.
       - name: Bump version
         id: bump
+        if: inputs.branch == ''
         run: bash -- scripts/bump_version.sh --dir "yacp/${{ inputs.package }}" --version "${{ inputs.version }}"
+
+      - name: Detect existing cygport (branch-rebuild mode)
+        id: detect
+        if: inputs.branch != ''
+        run: bash -- scripts/detect_cygport_file.sh --dir "yacp/${{ inputs.package }}"
 
       - name: Determine extra build dependencies
         id: depends
-        run: bash -- scripts/cygport_depends.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
+        run: bash -- scripts/cygport_depends.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
 
       - name: Install Cygwin (extra dependencies)
         uses: cygwin/cygwin-install-action@v6
@@ -167,22 +194,22 @@ jobs:
         run: bash -c "gem install --no-document xezat"
 
       - name: xezat prep
-        run: bash -- scripts/xezat_prep.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
+        run: bash -- scripts/xezat_prep.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
 
       - name: cygport compile
-        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}" --step compile
+        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step compile
 
       - name: cygport install
-        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}" --step install
+        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step install
 
       - name: cygport package
-        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}" --step package
+        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step package
 
       - name: Validate build via xezat
-        run: bash -- scripts/xezat_validate.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
+        run: bash -- scripts/xezat_validate.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
 
       - name: Update README via xezat
-        run: bash -- scripts/xezat_bump.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
+        run: bash -- scripts/xezat_bump.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
 
       # cygport's `install` step (above) already runs postinst as part of
       # itself (see cygport's own src_postinst.cygpart/bin/cygport.in:
@@ -196,17 +223,17 @@ jobs:
       # archive picks up that change -- otherwise the shipped package
       # would carry the stale changelog forever.
       - name: cygport postinst
-        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}" --step postinst
+        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step postinst
 
       - name: cygport package (with updated README)
-        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}" --step package
+        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step package
 
       # xezat bump only rewrites the build tree's own README copy ($C),
       # never the package directory's tracked one -- see xezat_port.sh for
       # why. `xezat port` is what copies it (plus the cygport file itself
       # and any src.patch) back.
       - name: Copy build results back via xezat port
-        run: bash -- scripts/xezat_port.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}"
+        run: bash -- scripts/xezat_port.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
 
       # Mainly so a run's log makes it easy to eyeball whether xezat
       # bump/port did the right thing, without waiting for the Create
@@ -234,7 +261,14 @@ jobs:
       # -m>.yml" (e.g. last-1654-1bl1.x86_64.yml -- see xezat's
       # variables.rb), every time it parses the cygport file (prep/bump/
       # port all do). That's a local speedup, not something to commit.
+      #
+      # if: always() (rather than the default success-only) so this still
+      # shows the rename even when a later step -- cygport compile, most
+      # commonly -- is what actually failed (doc/spec.md 4.6): there's
+      # nothing to show yet if Bump version/Detect existing cygport itself
+      # is what failed, hence the outcome check.
       - name: Show diff
+        if: always() && (steps.bump.outcome == 'success' || steps.detect.outcome == 'success')
         run: |
           git -C yacp add -A -- ${{ inputs.package }} ":(exclude)${{ inputs.package }}/*.x86_64/**" ":(exclude)${{ inputs.package }}/*.x86_64.yml"
           git -C yacp diff --cached -- ${{ inputs.package }}
@@ -243,7 +277,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.package }}-${{ inputs.version }}-dist
+          name: ${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}-dist
           # A `**/dist/**` glob has to walk every subdirectory to find
           # matches, including .../<pn>-<pv>-<pr>.x86_64/build/ -- which
           # contains files coming out of the Cygwin build (e.g. a checked-
@@ -266,10 +300,17 @@ jobs:
       # build tree instead, via cygport's own `clean` step (== `finish`,
       # `rm -rf` of the whole per-arch work directory -- safe to run now
       # since Upload dist artifact above already read what it needed out
-      # of it). Cygwin's own `rm -rf` handles the symlink fine; it's only
-      # Windows Git's tooling that can't.
+      # of it, when there was anything to read). Cygwin's own `rm -rf`
+      # handles the symlink fine; it's only Windows Git's tooling that
+      # can't.
+      #
+      # if: always() (see Show diff above) so the build tree also gets out
+      # of the way of Create draft Pull Request on the failure path
+      # (doc/spec.md 4.6) -- not just the success-only Create Pull
+      # Request below.
       - name: cygport clean
-        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}" --step clean
+        if: always() && (steps.bump.outcome == 'success' || steps.detect.outcome == 'success')
+        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step clean
 
       # Placed after the artifact upload so a problem here (still
       # unvalidated as of Step 2 -- first real use of YACP_SECRET) can't
@@ -294,12 +335,22 @@ jobs:
             ${{ inputs.package }}
             :(exclude)${{ inputs.package }}/*.x86_64/**
             :(exclude)${{ inputs.package }}/*.x86_64.yml
-          branch: dorgann/${{ inputs.package }}-${{ inputs.version }}
+          branch: dorgann/${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}
           delete-branch: true
           # "<PN>-<PV>", no colon or verb, matches yacp's own existing
           # commit message convention (checked against its git history).
-          commit-message: "${{ inputs.package }}-${{ inputs.version }}"
-          title: "${{ inputs.package }}-${{ inputs.version }}"
+          commit-message: "${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}"
+          title: "${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}"
+          # false (the default -- not set explicitly here) on both create
+          # and update, per peter-evans/create-pull-request's own docs
+          # ("draft: ... true (only on create), always-true (on create and
+          # update), and false"), which reads as false applying in both
+          # cases too -- so re-running this in branch-rebuild mode
+          # (doc/spec.md 4.6), after Create draft Pull Request below made
+          # this same branch's PR a draft on an earlier failed attempt,
+          # should un-draft it once the build actually passes. Unverified
+          # against a real re-run as of writing; worth confirming.
+          #
           # The dorgann-meta HTML comment mirrors the machine-parseable
           # metadata convention doc/spec.md 4.5 already uses for failure
           # Issues -- an HTML comment survives copy/paste and markdown
@@ -307,7 +358,7 @@ jobs:
           # human-facing code block. artifact-id is actions/upload-
           # artifact's own step output (v4+), not something computed here.
           body: |
-            Automated version bump to `${{ inputs.version }}`, built and validated by [dorgann](https://github.com/fd00/dorgann).
+            Version `${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}`, built and validated by [dorgann](https://github.com/fd00/dorgann).
 
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -317,6 +368,44 @@ jobs:
             ```
             gh workflow run publish-devel.yml -f artifact_id=${{ steps.upload.outputs.artifact-id }} --repo ${{ github.repository }}
             ```
+
+      # Branch-rebuild mode's entry point (doc/spec.md 4.6). Mirrors
+      # Create Pull Request above (same deterministic branch name, so
+      # re-running this workflow for the same package/version updates the
+      # same branch/PR either action created), but only runs on the
+      # failure path, and only if there's actually something to push --
+      # Bump version/Detect existing cygport succeeding means the package
+      # directory has at least a rename to show, even though the build
+      # itself failed later. This gives a human a concrete branch to pull,
+      # fix by hand (add a missing BUILD_REQUIRES, rename PKG_NAMES for an
+      # ABI bump, ...), and push straight back to -- at which point
+      # re-running this workflow with `branch` set to this same name picks
+      # the fix up (skipping the bump, since it's already done) and
+      # re-validates it for real.
+      - name: Create draft Pull Request (on failure)
+        if: failure() && (steps.bump.outcome == 'success' || steps.detect.outcome == 'success')
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.YACP_SECRET }}
+          path: yacp
+          add-paths: |
+            ${{ inputs.package }}
+            :(exclude)${{ inputs.package }}/*.x86_64/**
+            :(exclude)${{ inputs.package }}/*.x86_64.yml
+          branch: dorgann/${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}
+          delete-branch: true
+          draft: true
+          commit-message: "${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}"
+          title: "${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }} (build failing)"
+          body: |
+            Version `${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}`, but the build failed -- see the failure Issue and the run log below for what's missing (commonly a missing `BUILD_REQUIRES`, or a `PKG_NAMES` change for an ABI bump).
+
+            Push a fix directly onto this branch (`dorgann/${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}`), then re-run the build against it:
+            ```
+            gh workflow run build-package.yml -f package=${{ inputs.package }} -f branch=dorgann/${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }} --repo ${{ github.repository }}
+            ```
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       # No `if:` here -- a step without one only runs if every earlier step
       # in the job succeeded (doc/spec.md 4.4: "If there's an open failure
@@ -338,4 +427,4 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash -- scripts/report_build_failure.sh --repo ${{ github.repository }} --package "${{ inputs.package }}" --version "${{ inputs.version }}" --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: bash -- scripts/report_build_failure.sh --repo ${{ github.repository }} --package "${{ inputs.package }}" --version "${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}" --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
