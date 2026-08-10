@@ -84,6 +84,16 @@ if [[ -n "$existing" ]]; then
   echo "Updating existing build-failed Issue #$existing for $package" >&2
   gh issue edit "$existing" --repo "$repo" --title "$title" --body-file "$body_file_native"
 else
+  # `gh issue create --label` fails outright if the label doesn't already
+  # exist in the repo (confirmed by a real run: "could not add label:
+  # 'build-failed' not found") -- rather than depending on a one-time
+  # manual repo-setup step to create it first, create it here on demand.
+  # Idempotent: gh label create's own "already exists" error is swallowed,
+  # same as every other already-exists case this repo treats as a no-op
+  # (e.g. checkout_gh_pages.sh bootstrapping gh-pages).
+  gh label create build-failed --repo "$repo" --color d73a4a \
+    --description "A dorgann build for this package failed" 2>/dev/null || true
+
   echo "Filing a new build-failed Issue for $package" >&2
   gh issue create --repo "$repo" --title "$title" --body-file "$body_file_native" --label build-failed
 fi
