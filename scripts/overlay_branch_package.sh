@@ -55,3 +55,15 @@ git -C "$dir" fetch --depth=1 origin "$branch:refs/remotes/origin/$branch"
 
 git -C "$dir" rm -rq --ignore-unmatch -- "$package"
 git -C "$dir" checkout "origin/$branch" -- "$package"
+
+# cygport sources .cygport files as a bash script, so CRLF line endings
+# are fatal to it ("line 3: $'\r': command not found", confirmed by a
+# real run) -- and unlike a fresh checkout of dorgann-generated content,
+# this directory's content was just brought in from whatever a human
+# committed by hand, quite possibly from a Windows git/editor setup that
+# reintroduces CRLF into the blob itself. build-package.yml's own
+# "Disable line-ending conversion on checkout" doesn't help here: it only
+# stops checkout from adding *more* conversion on top of a blob, it can't
+# strip bytes the blob already contains. Normalize defensively rather
+# than trust every future manual fix to get this right.
+grep -rlZ $'\r$' "$dir/$package" | xargs -0 -r sed -i 's/\r$//'
