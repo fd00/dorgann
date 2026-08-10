@@ -326,11 +326,21 @@ jobs:
       # re-running this workflow for the same package/version updates
       # the existing PR/branch instead of piling up duplicates --
       # create-pull-request's own designed behavior for this case.
+      #
+      # base: master is required in branch-rebuild mode (doc/spec.md 4.6):
+      # without it, create-pull-request defaults the PR's base to whatever
+      # ref Checkout yacp checked out -- which in branch-rebuild mode is
+      # the same dorgann/<pkg>-<ver> branch this step's own `branch:`
+      # targets, making base == branch and the PR creation call fail
+      # outright ("The 'base' and 'branch' for a pull request must be
+      # different branches", confirmed by a real run). Harmless to always
+      # set, so it isn't conditional on branch-rebuild mode specifically.
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.YACP_SECRET }}
           path: yacp
+          base: master
           add-paths: |
             ${{ inputs.package }}
             :(exclude)${{ inputs.package }}/*.x86_64/**
@@ -388,6 +398,9 @@ jobs:
         with:
           token: ${{ secrets.YACP_SECRET }}
           path: yacp
+          # See Create Pull Request above for why this is required in
+          # branch-rebuild mode.
+          base: master
           add-paths: |
             ${{ inputs.package }}
             :(exclude)${{ inputs.package }}/*.x86_64/**
