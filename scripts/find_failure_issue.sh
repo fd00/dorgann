@@ -33,6 +33,13 @@ done
 
 needle="\"package\":\"$package\""
 
+# tr -d '\r' at the end: on windows-latest, gh/jq here are native Windows
+# binaries piped through Cygwin bash, and one of them writes CRLF line
+# endings even to a pipe -- confirmed by a real run, where the captured
+# issue number came out as "1\r" (command substitution only strips
+# trailing newlines, not embedded carriage returns), and gh issue
+# edit/close then rejected it outright ('invalid issue format: "1\r"').
 gh issue list --repo "$repo" --label build-failed --state open --limit 100 --json number,body |
   jq -r --arg needle "$needle" '.[] | select(.body | contains($needle)) | .number' |
-  head -n1
+  head -n1 |
+  tr -d '\r'
