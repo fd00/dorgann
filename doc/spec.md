@@ -197,7 +197,7 @@ on:
 
 ### 4.5 On failure (finalized)
 
-An Issue is filed, made up of three parts:
+An Issue is filed, made up of two parts:
 
 **Label**: tagged `build-failed`, so the Issues screen can be filtered with `label:build-failed`.
 
@@ -214,20 +214,7 @@ An Issue is filed, made up of three parts:
 
 The check-updates step extracts `package`/`version` from the `dorgann-meta` HTML comment of any open `build-failed` Issue via a regex, and compares it against the latest version (see 4.2). If the design only checked "does an Issue exist" without recording the version, then once upstream published a new version the build would be skipped forever, so it's essential to compare the recorded version against the latest one.
 
-**Build log excerpt**: since GitHub Actions logs disappear after their retention period, the failure log is copied into the Issue body. Since the full log would be verbose and could exceed the Issue body's limit (65,536 characters when created via the API — [community discussion #27190](https://github.com/orgs/community/discussions/27190)), it's **trimmed to roughly the last 200 lines** (`tail -n 200`), with an additional safety margin on total character count in case any single line is extremely long (e.g. verbose build-tool output). It's wrapped in `<details>` so the Issue doesn't look excessively long.
-
-````markdown
-<details>
-<summary>Build log (last 200 lines)</summary>
-
-```text
-(output of tail -n 200, further truncated with a total character-count cap as a safety margin)
-```
-
-</details>
-````
-
-A link to the corresponding Actions run is also kept in the body (a reference to the full log, as long as it's within the retention period).
+**Link to the Actions run**: rather than copying a log excerpt into the Issue body, the body just links to the run. Reasoning, settled after actually using this on a couple of real failures: a fixed `tail -n 200` is a poor fit either way — long enough to bloat the Issue in the common case, yet not guaranteed to actually contain the relevant error for a build that fails many steps and hundreds of lines into a verbose one (e.g. a `meson`/`cmake` configure log). The run itself keeps the complete, unclipped log for the repository's full retention period (90 days by default — the same window build artifacts live for, per 4.4), which is long enough to investigate and fix a failure in practice; an excerpt would only ever be a lossy, harder-to-search copy of what's already sitting one click away.
 
 ## 5. Implementation Policy (separating workflow YAML from scripts)
 
@@ -286,9 +273,17 @@ Replace the manual `version` input with automatic determination via Repology / t
 
 Reusing the "process one package" logic built through Step 3, add a check-updates job (4.2) that scans all of `packages.yml`, and a build job that expands only the updated packages into a matrix (4.3), triggered automatically via `schedule: cron`.
 
-**Step 5: File an Issue on failure**
+**Step 5: File an Issue on failure (done)**
 
-Add Issue filing on build failure (label, metadata, log excerpt — 4.5), and skip logic for the next loop (4.2).
+Add Issue filing on build failure (label, metadata, run link — 4.5), and skip logic for the next loop (4.2).
+
+Implemented as two new steps in `.github/workflows/build-package.yml` / `scripts/{report_build_failure,close_failure_issue,find_failure_issue}.sh`, out of numeric order like Step 6 — it has no dependency on Steps 3/4's daily-cron loop, only on there being a build job at all. **File failure Issue** is the job's last step, with its own `if: failure()` (so it runs regardless of which earlier step failed — bump, cygport build, xezat, Create Pull Request, ...); **Close failure Issue** has no `if:` of its own and so only runs on the success path, per GitHub Actions' implicit `if: success()` for steps that don't declare one.
+
+One design point not fully spelled out in 4.5 itself, resolved here: **avoiding duplicate Issues across repeat failures**. `find_failure_issue.sh` searches open `build-failed` Issues for one whose `dorgann-meta` comment already names the same package (a literal JSON substring match via `jq --arg`, not a title search — the title also carries the version and changes on every failure). `report_build_failure.sh` reuses this to edit the existing Issue in place (fresh version) rather than piling up a new one on every retry; `close_failure_issue.sh` reuses it the same way to find what to close.
+
+The original design also called for a log excerpt in the Issue body; dropped after actually using this against a couple of real failures, in favor of just the run link — see 4.5 for the reasoning.
+
+The `skip logic for the next loop (4.2)` — comparing an open Issue's recorded version against the latest before deciding whether to retry — has nothing to run it yet (that's check-updates, part of Step 3/4's daily-cron loop, not implemented), but the Issue side is already in the exact shape 4.2 expects to read back (`dorgann-meta`'s `version` field).
 
 **Step 6: Publish devel packages to gh-pages (done)**
 

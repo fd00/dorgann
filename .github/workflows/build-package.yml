@@ -4,6 +4,11 @@ name: build-package
 # actually works on a windows-latest Actions runner.
 # Step 2: adds PR creation against yacp (doc/spec.md 4.4.1). package/
 # version are still manual workflow_dispatch inputs -- that's Step 3.
+# Step 5: files a build-failed Issue (doc/spec.md 4.5) if any step above
+# fails, and closes it back out on a later success (4.4) -- implemented
+# out of numeric order, same as Step 6, since it doesn't depend on Steps
+# 3/4's daily-cron loop at all; only that loop's own skip-if-already-
+# failed check (4.2) is still deferred to whenever Step 4 lands.
 #
 # xezat handles fetching/preparing sources (`xezat prep`, before the
 # build), regenerating the package's README/changelog (`xezat bump`,
@@ -56,6 +61,12 @@ on:
         required: false
         type: string
         default: ""
+
+# issues:write for report_build_failure.sh/close_failure_issue.sh
+# (doc/spec.md 4.5).
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   build:
@@ -306,3 +317,25 @@ jobs:
             ```
             gh workflow run publish-devel.yml -f artifact_id=${{ steps.upload.outputs.artifact-id }} --repo ${{ github.repository }}
             ```
+
+      # No `if:` here -- a step without one only runs if every earlier step
+      # in the job succeeded (doc/spec.md 4.4: "If there's an open failure
+      # Issue for the same package, it is closed."). On the failure path
+      # this is simply skipped, and File failure Issue below (which does
+      # have its own `if: failure()`) runs instead.
+      - name: Close failure Issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash -- scripts/close_failure_issue.sh --repo ${{ github.repository }} --package "${{ inputs.package }}" --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      # Last step in the job, and the only one with `if: failure()` --
+      # doc/spec.md 4.5. Runs regardless of which earlier step failed
+      # (bump, cygport build, xezat, Create Pull Request, ...); the Issue
+      # just links back to this run rather than embedding a log excerpt
+      # (see doc/spec.md 4.5 for why), so which step it was is one click
+      # away rather than baked in here.
+      - name: File failure Issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash -- scripts/report_build_failure.sh --repo ${{ github.repository }} --package "${{ inputs.package }}" --version "${{ inputs.version }}" --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
