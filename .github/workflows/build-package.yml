@@ -347,6 +347,7 @@ jobs:
       # branch reconciliation), so this is redundant in practice, not
       # load-bearing.
       - name: Create Pull Request
+        id: create-pr
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.YACP_SECRET }}
@@ -362,15 +363,12 @@ jobs:
           # commit message convention (checked against its git history).
           commit-message: "${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}"
           title: "${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}"
-          # false (the default -- not set explicitly here) on both create
-          # and update, per peter-evans/create-pull-request's own docs
-          # ("draft: ... true (only on create), always-true (on create and
-          # update), and false"), which reads as false applying in both
-          # cases too -- so re-running this in branch-rebuild mode
-          # (doc/spec.md 4.6), after Create draft Pull Request below made
-          # this same branch's PR a draft on an earlier failed attempt,
-          # should un-draft it once the build actually passes. Unverified
-          # against a real re-run as of writing; worth confirming.
+          # Leaving `draft` unset (defaults to false) does NOT un-draft an
+          # existing draft PR on update, contrary to what
+          # peter-evans/create-pull-request's own docs implied -- confirmed
+          # by a real branch-rebuild success (title/body updated correctly,
+          # but isDraft stayed true). Mark Pull Request ready for review
+          # below handles it explicitly instead.
           #
           # The dorgann-meta HTML comment mirrors the machine-parseable
           # metadata convention doc/spec.md 4.5 already uses for failure
@@ -389,6 +387,16 @@ jobs:
             ```
             gh workflow run publish-devel.yml -f artifact_id=${{ steps.upload.outputs.artifact-id }} --repo ${{ github.repository }}
             ```
+
+      # Only matters in branch-rebuild mode (doc/spec.md 4.6): a fresh-
+      # bump-mode PR is never a draft in the first place (Create draft
+      # Pull Request below only runs on the failure path), so this is a
+      # harmless no-op for that case. `gh pr ready` on an already-ready PR
+      # is idempotent.
+      - name: Mark Pull Request ready for review
+        env:
+          GH_TOKEN: ${{ secrets.YACP_SECRET }}
+        run: gh pr ready ${{ steps.create-pr.outputs.pull-request-number }} --repo fd00/yacp
 
       # Branch-rebuild mode's entry point (doc/spec.md 4.6). Mirrors
       # Create Pull Request above (same deterministic branch name, so
