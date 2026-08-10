@@ -96,14 +96,17 @@ jobs:
         with:
           repository: fd00/yacp
           path: yacp
-          # Empty (the default, when `branch` isn't given) is the same as
-          # omitting `ref` entirely as far as actions/checkout is
-          # concerned -- it falls back to fd00/yacp's own default branch.
-          # Branch-rebuild mode (doc/spec.md 4.6) points this at an
-          # existing dorgann/<pkg>-<ver> branch instead, so a human's
-          # manual fix (BUILD_REQUIRES, a PKG_NAMES rename for an ABI
-          # bump, ...) already committed there gets picked up as-is.
-          ref: ${{ inputs.branch }}
+          # Always fd00/yacp's own default branch, even in branch-rebuild
+          # mode (doc/spec.md 4.6) -- checking out `inputs.branch` here
+          # directly was tried first and broke peter-evans/create-pull-
+          # request's own base-branch reconciliation (confirmed by a real
+          # run: with nothing newly committed during a run that only
+          # re-validates an already-fixed branch, it collapsed the whole
+          # branch down to be byte-identical to base and deleted/closed it
+          # outright). Overlay branch content below brings the branch's
+          # fix in as a plain uncommitted diff against this checkout
+          # instead, which doesn't have that problem.
+          #
           # dorgann's own default GITHUB_TOKEN is scoped to dorgann only
           # and can't push to yacp -- YACP_SECRET is a fine-grained PAT
           # scoped to fd00/yacp with contents:write/pull-requests:write
@@ -139,6 +142,15 @@ jobs:
       # see it.
       - name: Configure cygport
         run: bash -- scripts/configure_cygport.sh
+
+      # Branch-rebuild mode (doc/spec.md 4.6): brings the target branch's
+      # version of the package directory in as a plain uncommitted diff
+      # against the master checkout above, rather than checking out the
+      # branch itself (see Checkout yacp for why that broke). Must run
+      # before Detect existing cygport below, which reads this directory.
+      - name: Overlay branch content (branch-rebuild mode)
+        if: inputs.branch != ''
+        run: bash -- scripts/overlay_branch_package.sh --dir yacp --package "${{ inputs.package }}" --branch "${{ inputs.branch }}"
 
       # Two mutually exclusive paths, selected by whether `branch` was
       # given (doc/spec.md 4.6) -- exactly one of these two steps runs.
@@ -327,14 +339,13 @@ jobs:
       # the existing PR/branch instead of piling up duplicates --
       # create-pull-request's own designed behavior for this case.
       #
-      # base: master is required in branch-rebuild mode (doc/spec.md 4.6):
-      # without it, create-pull-request defaults the PR's base to whatever
-      # ref Checkout yacp checked out -- which in branch-rebuild mode is
-      # the same dorgann/<pkg>-<ver> branch this step's own `branch:`
-      # targets, making base == branch and the PR creation call fail
-      # outright ("The 'base' and 'branch' for a pull request must be
-      # different branches", confirmed by a real run). Harmless to always
-      # set, so it isn't conditional on branch-rebuild mode specifically.
+      # base: master is set explicitly rather than relying on the default
+      # (whatever ref Checkout yacp checked out) purely as cheap, always-
+      # correct documentation -- Checkout yacp only ever checks out
+      # master now (see its own comment for why an earlier attempt at
+      # checking out the branch directly here broke this action's base-
+      # branch reconciliation), so this is redundant in practice, not
+      # load-bearing.
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8
         with:
@@ -398,8 +409,8 @@ jobs:
         with:
           token: ${{ secrets.YACP_SECRET }}
           path: yacp
-          # See Create Pull Request above for why this is required in
-          # branch-rebuild mode.
+          # See Create Pull Request above -- redundant in practice, kept
+          # as documentation.
           base: master
           add-paths: |
             ${{ inputs.package }}
