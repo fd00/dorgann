@@ -316,8 +316,14 @@ Two gaps from the original 3.2 design turned up only once actually run against a
 
 Verified end-to-end: published `fd00/yacp`'s `last` package (from the same artifact used to verify Step 2) to gh-pages, and confirmed the live site actually serves it (`.../x86_64/setup.ini`, HTTP 200, with correct `install:`/`source:`/`depends2:` entries for `last`/`last-debuginfo`/`last-src`).
 
-**Step 7: Branch-rebuild mode for manual fixes (4.6) (in progress)**
+**Step 7: Branch-rebuild mode for manual fixes (4.6) (done)**
 
-Added once real Step 1/2 runs against actual upstream releases (`libmbd`, `libmodulemd`, `libucl`) kept hitting build failures a pure version bump can't fix on its own (missing `BUILD_REQUIRES`, ABI-driven `PKG_NAMES` renames) — see 4.6 for the full design and reasoning. Implemented in `build-package.yml` (`branch` input, `Detect existing cygport` step, `Create draft Pull Request (on failure)` step) and `scripts/detect_cygport_file.sh`.
+Added once real Step 1/2 runs against actual upstream releases (`libmbd`, `libmodulemd`, `libucl`) kept hitting build failures a pure version bump can't fix on its own (missing `BUILD_REQUIRES`, ABI-driven `PKG_NAMES` renames) — see 4.6 for the full design and reasoning. Implemented in `build-package.yml` (`branch` input, `Detect existing cygport` step, `Overlay branch content` step, `Create draft Pull Request (on failure)` step, `Mark Pull Request ready for review` step) and `scripts/{detect_cygport_file,overlay_branch_package}.sh`.
 
-Not yet verified end-to-end against a real human-fix-and-rebuild cycle (draft PR on failure → manual `BUILD_REQUIRES` push → `branch`-mode rebuild → success un-drafts the PR and closes the failure Issue) — marked in-progress rather than done until that's confirmed against a real run, consistent with how every other step in this chapter was finalized.
+The design went through two real revisions before landing, both driven by actual failed runs rather than caught in review — see 4.6 for the full detail on each:
+
+- Checking out `branch` directly (via `actions/checkout`'s `ref:`) broke `peter-evans/create-pull-request`'s base-branch reconciliation and silently deleted the target branch (and the human's already-pushed fix along with it) the first time a rebuild made no new commits. Replaced with overlaying just the package directory's content onto an ordinary `master` checkout instead.
+- That overlay then hit a second real issue: a human's locally-committed fix carried CRLF line endings into the blob itself, which cygport can't source as a bash script. `overlay_branch_package.sh` now strips `\r` defensively after checking the branch's content in.
+- Leaving `draft` unset on `Create Pull Request` (defaulting to `false`) turned out not to un-draft an already-draft PR on update, contrary to what the action's own docs implied — a separate `gh pr ready` step now handles it explicitly.
+
+Verified end-to-end against a real human-fix-and-rebuild cycle: `libucl` 0.9.4 failed to build (missing `BUILD_REQUIRES` for a Lua interpreter and `gobject-introspection`/Fortran on other packages along the way), dorgann filed [fd00/dorgann#1](https://github.com/fd00/dorgann/issues/1) and pushed a draft PR to a `dorgann/libucl-0.9.4` branch; after the missing `BUILD_REQUIRES` were added directly on that branch (by hand) and the build re-run with `-f branch=dorgann/libucl-0.9.4`, the build passed, [fd00/yacp#50](https://github.com/fd00/yacp/pull/50) was updated and marked ready for review (`isDraft: false`), and the Issue was closed automatically.
