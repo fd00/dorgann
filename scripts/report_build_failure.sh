@@ -64,12 +64,26 @@ trap 'rm -f "$body_file"' EXIT
 
 title="$package: build failed at $version"
 
+# `gh` on windows-latest (this script's only caller, build-package.yml, is
+# windows-only) is the runner's native Windows gh.exe, not a Cygwin build
+# -- it can't resolve the POSIX-style path mktemp just gave us (confirmed
+# by a real run: "open /tmp/tmp.XXXXXXXX: The system cannot find the path
+# specified", the Windows API's own wording for a path it can't parse at
+# all). cygpath -w is the same POSIX->Windows conversion
+# scripts/xezat_cache_info.sh already relies on for the same reason. Kept
+# conditional so this script still runs as-is on a non-Cygwin box (e.g.
+# testing locally on macOS/Linux per doc/spec.md 5's reproducibility goal).
+body_file_native="$body_file"
+if command -v cygpath >/dev/null 2>&1; then
+  body_file_native="$(cygpath -w "$body_file")"
+fi
+
 existing="$("$script_dir/find_failure_issue.sh" --repo "$repo" --package "$package")"
 
 if [[ -n "$existing" ]]; then
   echo "Updating existing build-failed Issue #$existing for $package" >&2
-  gh issue edit "$existing" --repo "$repo" --title "$title" --body-file "$body_file"
+  gh issue edit "$existing" --repo "$repo" --title "$title" --body-file "$body_file_native"
 else
   echo "Filing a new build-failed Issue for $package" >&2
-  gh issue create --repo "$repo" --title "$title" --body-file "$body_file" --label build-failed
+  gh issue create --repo "$repo" --title "$title" --body-file "$body_file_native" --label build-failed
 fi
