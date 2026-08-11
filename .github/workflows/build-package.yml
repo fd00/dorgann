@@ -67,6 +67,11 @@ on:
         required: false
         type: string
         default: ""
+      check_timeout_minutes:
+        description: "Timeout (minutes) for cygport check -- failures/timeouts there don't block the PR"
+        required: false
+        type: number
+        default: 10
 
 # issues:write for report_build_failure.sh/close_failure_issue.sh
 # (doc/spec.md 4.5).
@@ -248,6 +253,20 @@ jobs:
 
       - name: cygport compile
         run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step compile
+
+      # Non-fatal by design: a test suite failing (or hanging -- some
+      # need a display, network access, or other things a CI runner
+      # doesn't have) says something about the package worth knowing, but
+      # isn't reason enough to withhold the PR/artifact over, unlike an
+      # actual compile/install/package failure. continue-on-error swallows
+      # the failure so later steps still run; timeout-minutes caps how
+      # long a hang can hold the job (check_timeout_minutes input,
+      # default 10 -- override per-run for a package with a genuinely
+      # slow test suite).
+      - name: cygport check
+        continue-on-error: true
+        timeout-minutes: ${{ inputs.check_timeout_minutes }}
+        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step check
 
       - name: cygport install
         run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step install
