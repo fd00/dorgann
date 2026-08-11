@@ -66,4 +66,13 @@ git -C "$dir" checkout "origin/$branch" -- "$package"
 # stops checkout from adding *more* conversion on top of a blob, it can't
 # strip bytes the blob already contains. Normalize defensively rather
 # than trust every future manual fix to get this right.
-grep -rlZ $'\r$' "$dir/$package" | xargs -0 -r sed -i 's/\r$//'
+# grep exits 1 (not an error, just "no matches") whenever nothing in the
+# directory actually has CRLF -- under `set -e -o pipefail`, piping that
+# straight into xargs would make the *normal* case (nothing to strip)
+# abort the whole script. Collecting matches into an array first, with an
+# explicit `|| true`, sidesteps that -- sed only runs at all if there's
+# something to fix.
+mapfile -d '' -t crlf_files < <(grep -rlZ $'\r$' "$dir/$package" || true)
+if [[ ${#crlf_files[@]} -gt 0 ]]; then
+  sed -i 's/\r$//' "${crlf_files[@]}"
+fi
