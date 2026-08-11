@@ -428,9 +428,14 @@ jobs:
           delete-branch: true
           draft: true
           commit-message: "${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}"
-          title: "${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }} (build failing)"
+          # Same "<PN>-<PV>" title as Create Pull Request above -- whether
+          # it built is what draft status and the body are for, not the
+          # title. Keeping it identical also means the eventual successful
+          # re-run doesn't need to change the title at all, only the draft
+          # status (Mark Pull Request ready for review) and body.
+          title: "${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}"
           body: |
-            Version `${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}`, but the build failed -- see the failure Issue and the run log below for what's missing (commonly a missing `BUILD_REQUIRES`, or a `PKG_NAMES` change for an ABI bump).
+            Version `${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}`, but the build failed -- see the failure Issue and the run log below for what's wrong.
 
             Push a fix directly onto this branch (`dorgann/${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}`), then re-run the build against it:
             ```
