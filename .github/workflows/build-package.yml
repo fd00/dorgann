@@ -143,30 +143,49 @@ jobs:
       - name: Configure cygport
         run: bash -- scripts/configure_cygport.sh
 
+      # Auto-detects branch-rebuild mode (doc/spec.md 4.6) when `branch`
+      # wasn't given explicitly: if dorgann/<package>-<version> already
+      # exists in yacp (typically left over from an earlier failed run's
+      # own draft PR), there's no reason to make re-running with just
+      # package+version fail on bump_version.sh's "already at this
+      # version" refusal -- just rebuild that branch instead. A pure API
+      # call, so it doesn't need yacp checked out locally first.
+      - name: Detect existing branch (auto branch-rebuild)
+        id: auto-branch
+        if: inputs.branch == '' && inputs.version != ''
+        env:
+          GH_TOKEN: ${{ secrets.YACP_SECRET }}
+        run: bash -- scripts/detect_existing_branch.sh --repo fd00/yacp --package "${{ inputs.package }}" --version "${{ inputs.version }}"
+
       # Branch-rebuild mode (doc/spec.md 4.6): brings the target branch's
       # version of the package directory in as a plain uncommitted diff
       # against the master checkout above, rather than checking out the
       # branch itself (see Checkout yacp for why that broke). Must run
       # before Detect existing cygport below, which reads this directory.
+      # `branch` is `inputs.branch` when given explicitly, or whatever
+      # Detect existing branch found otherwise -- same concatenation
+      # trick as the version/cygport_file outputs below, since at most
+      # one of the two is ever non-empty.
       - name: Overlay branch content (branch-rebuild mode)
-        if: inputs.branch != ''
-        run: bash -- scripts/overlay_branch_package.sh --dir yacp --package "${{ inputs.package }}" --branch "${{ inputs.branch }}"
+        if: inputs.branch != '' || steps.auto-branch.outputs.branch != ''
+        run: bash -- scripts/overlay_branch_package.sh --dir yacp --package "${{ inputs.package }}" --branch "${{ inputs.branch }}${{ steps.auto-branch.outputs.branch }}"
 
-      # Two mutually exclusive paths, selected by whether `branch` was
-      # given (doc/spec.md 4.6) -- exactly one of these two steps runs.
-      # Every step below reads through the concatenation of both steps'
-      # outputs (e.g. "${{ steps.bump.outputs.X }}${{ steps.detect.outputs.X }}"),
+      # Two mutually exclusive paths, selected by whether a branch --
+      # explicit or auto-detected above -- applies (doc/spec.md 4.6) --
+      # exactly one of these two steps runs. Every step below reads
+      # through the concatenation of both steps' outputs (e.g.
+      # "${{ steps.bump.outputs.X }}${{ steps.detect.outputs.X }}"),
       # which is always exactly one non-empty value since a skipped step's
       # outputs are the empty string, not an error -- so nothing below
       # needs to know which of the two paths actually ran.
       - name: Bump version
         id: bump
-        if: inputs.branch == ''
+        if: inputs.branch == '' && steps.auto-branch.outputs.branch == ''
         run: bash -- scripts/bump_version.sh --dir "yacp/${{ inputs.package }}" --version "${{ inputs.version }}"
 
       - name: Detect existing cygport (branch-rebuild mode)
         id: detect
-        if: inputs.branch != ''
+        if: inputs.branch != '' || steps.auto-branch.outputs.branch != ''
         run: bash -- scripts/detect_cygport_file.sh --dir "yacp/${{ inputs.package }}"
 
       - name: Determine extra build dependencies
