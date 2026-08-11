@@ -1,14 +1,18 @@
-name: publish-devel
+name: publish
 
 # Step 6 (doc/spec.md, chapter 7 / section 4.4.2): publishes a dorgann-
-# built devel package to gh-pages as a Cygwin-compatible binary
-# repository (setup.ini format, doc/spec.md chapter 3), for distribution
-# via `setup-x86_64.exe --site <Pages URL>`. The DECISION of whether to
-# publish a given build is made by a human (that's what running this
-# workflow *is*), but the mechanical work from there -- fetch the
-# artifact, lay it out in the release-area convention, regenerate
-# setup.ini via calm, and commit/force-push gh-pages -- is fully
-# automated.
+# built package to gh-pages as a Cygwin-compatible binary repository
+# (setup.ini format, doc/spec.md chapter 3), for distribution via
+# `setup-x86_64.exe --site <Pages URL>`. Originally named publish-
+# devel.yml, back when only devel (unofficial/overlay) packages were
+# meant to go through here -- renamed once that stopped being true (this
+# now publishes ordinary packages too), along with the repository_dispatch
+# event type below (yacp's distribute.yml sends `publish`, not
+# `publish-devel`, accordingly). The DECISION of whether to publish a
+# given build is made by a human (that's what running this workflow
+# *is*), but the mechanical work from there -- fetch the artifact, lay it
+# out in the release-area convention, regenerate setup.ini via calm, and
+# commit/force-push gh-pages -- is fully automated.
 #
 # Runs on ubuntu-latest, not windows-latest: none of this needs Cygwin --
 # calm/mksetupini is plain Python, and the gh-pages update is plain git.
@@ -18,13 +22,13 @@ name: publish-devel
 # corresponding yacp PR has been merged, is still open, or exists at all.
 #
 # Two ways in: workflow_dispatch (manual, `inputs.artifact_id`) and
-# repository_dispatch (automatic -- yacp's own notify-dorgann.yml sends a
-# "publish-devel" event with `client_payload.artifact_id` when it sees one
-# of dorgann's PRs get merged, extracting the artifact_id from that PR's
-# own dorgann-meta comment, doc/spec.md 4.4.1). Auto-publish-on-merge
-# revises the original "publish is a separate human decision, independent
-# of merge state" design (doc/spec.md 4.4) -- accepted deliberately, not
-# an oversight.
+# repository_dispatch (automatic -- yacp's own distribute.yml sends a
+# "publish" event with `client_payload.artifact_id` when it sees one of
+# dorgann's PRs get merged, extracting the artifact_id from that PR's own
+# dorgann-meta comment, doc/spec.md 4.4.1). Auto-publish-on-merge revises
+# the original "publish is a separate human decision, independent of
+# merge state" design (doc/spec.md 4.4) -- accepted deliberately, not an
+# oversight.
 #
 # FUTURE: exclude packages whose LICENSE doesn't permit binary
 # redistribution before publishing (not implemented yet).
@@ -37,7 +41,7 @@ on:
         required: true
         type: string
   repository_dispatch:
-    types: [publish-devel]
+    types: [publish]
 
 permissions:
   contents: write
@@ -55,7 +59,7 @@ permissions:
 # serializes ALL runs against each other; no cancel-in-progress, since
 # the fix here is "wait your turn", not "cancel and lose that publish".
 concurrency:
-  group: publish-devel-gh-pages
+  group: publish-gh-pages
   cancel-in-progress: false
 
 jobs:

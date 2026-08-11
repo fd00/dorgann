@@ -383,9 +383,9 @@ jobs:
 
             <!-- dorgann-meta: {"artifact_id":"${{ steps.upload.outputs.artifact-id }}"} -->
 
-            To publish this build as a devel package on gh-pages:
+            To publish this build to gh-pages:
             ```
-            gh workflow run publish-devel.yml -f artifact_id=${{ steps.upload.outputs.artifact-id }} --repo ${{ github.repository }}
+            gh workflow run publish.yml -f artifact_id=${{ steps.upload.outputs.artifact-id }} --repo ${{ github.repository }}
             ```
 
       # Only matters in branch-rebuild mode (doc/spec.md 4.6): a fresh-
