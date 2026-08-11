@@ -214,6 +214,13 @@ jobs:
       - name: cygport install
         run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step install
 
+      # Purely informational -- cygport's own `list` step (__list_files)
+      # prints the staged install tree ($D) to the log, so a run's output
+      # makes it easy to eyeball what actually got installed where
+      # without needing to reproduce the build locally.
+      - name: cygport list
+        run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step list
+
       - name: cygport package
         run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step package
 
