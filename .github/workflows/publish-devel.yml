@@ -102,8 +102,15 @@ jobs:
       - name: Generate setup.ini
         run: bash -- scripts/generate_setup_ini.sh --gh-pages-dir gh-pages
 
+      # gh-pages is rebuilt to a single commit on every run (3.3), so this
+      # message never has history to be read alongside -- just the
+      # published package name(s), as a cheap way to eyeball what the
+      # current tree actually is without digging into files. The run_id
+      # dropped: once past the 90-day Actions log retention it's a dead
+      # link, and a commit that's replaced on every run isn't a place
+      # worth keeping a for-now-only reference anyway.
       - name: Commit and force-push gh-pages
-        run: bash -- scripts/publish_gh_pages.sh --dir gh-pages --message "Publish ${{ steps.layout.outputs.published_packages }} (dorgann run ${{ github.run_id }})"
+        run: bash -- scripts/publish_gh_pages.sh --dir gh-pages --message "Publish ${{ steps.layout.outputs.published_packages }}"
 
       # Best-effort and non-fatal: GITHUB_TOKEN's `pages: write`
       # permission is designed around the newer artifact-based Pages
