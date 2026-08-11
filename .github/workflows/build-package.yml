@@ -153,6 +153,12 @@ jobs:
           # 3.1's account-level custom-domain caveat) -- needs updating if
           # dorgann ever moves to a different org/domain.
           site: "http://mirrors.kernel.org/sourceware/cygwin/ https://fd0.app/dorgann/"
+          # publish.yml's own release area (3.2) never generates .sig
+          # files -- that's calm's own maintainer-upload signing step on
+          # the real Cygwin infrastructure, not something in use here --
+          # so check-sig's default (true) would reject every package
+          # dorgann's own gh-pages site actually serves.
+          check-sig: false
 
       # Once Cygwin is installed, its own git ends up ahead of Git for
       # Windows on PATH for the rest of the job -- including in steps
@@ -252,6 +258,7 @@ jobs:
           # necessary at all -- same reasoning applies to every package
           # install in this job.
           site: "http://mirrors.kernel.org/sourceware/cygwin/ https://fd0.app/dorgann/"
+          check-sig: false
 
       - name: Compute xezat cache info
         id: xezat-cache-info
@@ -368,6 +375,18 @@ jobs:
       # variables.rb), every time it parses the cygport file (prep/bump/
       # port all do). That's a local speedup, not something to commit.
       #
+      # Packages that `inherit git` (GIT_URI/GIT_TAG instead of a plain
+      # SRC_URI tarball) are a third case: cygport's own git.cygclass
+      # (git_fetch()) always writes the tarball it builds from the clone
+      # to "${top}/${git_tarball}" -- the package directory itself, *not*
+      # DISTDIR (confirmed against cygport's actual source; DISTDIR only
+      # applies to src_fetch.cygpart's plain-URL path) -- so
+      # configure_cygport.sh can't redirect it, and it isn't inside
+      # *.x86_64/ either, confirmed by a real run (htslib) committing an
+      # untracked htslib-<PV>.tar.bz2 nobody wanted. yacp's own convention
+      # never commits these even for existing git-sourced packages, so
+      # exclude the pattern outright.
+      #
       # if: always() (rather than the default success-only) so this still
       # shows the rename even when a later step -- cygport compile, most
       # commonly -- is what actually failed (doc/spec.md 4.6): there's
@@ -376,7 +395,7 @@ jobs:
       - name: Show diff
         if: always() && (steps.bump.outcome == 'success' || steps.detect.outcome == 'success')
         run: |
-          git -C yacp add -A -- ${{ inputs.package }} ":(exclude)${{ inputs.package }}/*.x86_64/**" ":(exclude)${{ inputs.package }}/*.x86_64.yml"
+          git -C yacp add -A -- ${{ inputs.package }} ":(exclude)${{ inputs.package }}/*.x86_64/**" ":(exclude)${{ inputs.package }}/*.x86_64.yml" ":(exclude)${{ inputs.package }}/*.tar.*"
           git -C yacp diff --cached -- ${{ inputs.package }}
 
       - name: Upload dist artifact
@@ -451,6 +470,7 @@ jobs:
             ${{ inputs.package }}
             :(exclude)${{ inputs.package }}/*.x86_64/**
             :(exclude)${{ inputs.package }}/*.x86_64.yml
+            :(exclude)${{ inputs.package }}/*.tar.*
           branch: dorgann/${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}
           delete-branch: true
           # "<PN>-<PV>", no colon or verb, matches yacp's own existing
@@ -518,6 +538,7 @@ jobs:
             ${{ inputs.package }}
             :(exclude)${{ inputs.package }}/*.x86_64/**
             :(exclude)${{ inputs.package }}/*.x86_64.yml
+            :(exclude)${{ inputs.package }}/*.tar.*
           branch: dorgann/${{ inputs.package }}-${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}
           delete-branch: true
           draft: true
