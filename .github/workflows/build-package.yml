@@ -263,9 +263,19 @@ jobs:
       # long a hang can hold the job (check_timeout_minutes input,
       # default 10 -- override per-run for a package with a genuinely
       # slow test suite).
+      #
+      # fromJSON() is required despite `check_timeout_minutes` already
+      # being declared `type: number`: workflow_dispatch inputs are still
+      # plain strings in the `inputs` expression context regardless of
+      # their declared type (only the dispatch UI's input form actually
+      # validates against it), and timeout-minutes rejects a string
+      # outright ("The template is not valid... Unexpected value '10'",
+      # confirmed by a real run -- the step ran anyway with no effective
+      # timeout at all, rather than failing the workflow, which is what
+      # made this easy to miss).
       - name: cygport check
         continue-on-error: true
-        timeout-minutes: ${{ inputs.check_timeout_minutes }}
+        timeout-minutes: ${{ fromJSON(inputs.check_timeout_minutes) }}
         run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step check
 
       - name: cygport install
