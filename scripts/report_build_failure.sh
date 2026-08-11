@@ -69,7 +69,11 @@ trap 'rm -f "$body_file"' EXIT
   printf 'Run: %s\n' "$run_url"
 } >"$body_file"
 
-title="$package: build failed at $version"
+# "<PN>-<PV>", matching the naming convention build-package.yml's own
+# yacp PR title already uses (doc/spec.md 4.4.1) -- the build-failed
+# label already says this is a failure, so the title doesn't need to
+# spell that out too.
+title="$package-$version"
 
 # `gh` on windows-latest (this script's only caller, build-package.yml, is
 # windows-only) is the runner's native Windows gh.exe, not a Cygwin build
