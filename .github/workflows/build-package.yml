@@ -173,8 +173,22 @@ jobs:
       # disagreed about what $HOME even is on this runner (see Configure
       # cygport below) -- so this is set both ways rather than trusting
       # either alone to cover every later step that touches yacp.
+      #
+      # core.autocrlf false is set alongside it for the same reason:
+      # "Disable line-ending conversion on checkout" above only configures
+      # whichever git that plain (non-bash) step resolves to, which at
+      # that point in the job (before Cygwin's installed) is Git for
+      # Windows -- never Cygwin's own git, which is what `cygport fetch`
+      # actually shells out to (via xezat prep, itself a `bash --` step)
+      # for every upstream source clone from here on. Left at whatever
+      # Cygwin's git defaults to, a patch generated against a plain LF
+      # checkout can fail to apply against a CRLF-converted one at every
+      # -p level cygport tries, with no more detail than "will not apply"
+      # (confirmed against a real run -- htslib's src.patch, verified
+      # byte-for-byte correct against the actual upstream Makefile, still
+      # wouldn't apply in CI while applying fine locally).
       - name: Configure git safe.directory (Cygwin)
-        run: bash -c "git config --global --add safe.directory '*'"
+        run: bash -c "git config --global --add safe.directory '*' && git config --global core.autocrlf false"
 
       - name: Configure git safe.directory (Windows)
         run: git config --global --add safe.directory '*'
