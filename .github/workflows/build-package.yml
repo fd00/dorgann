@@ -133,6 +133,25 @@ jobs:
           # doesn't expect (NoMethodError on Gem.default_dirs).
           packages: cygport util-linux sed gcc-core gcc-g++ python3 ruby rubygems
 
+      # Once Cygwin is installed, its own git ends up ahead of Git for
+      # Windows on PATH for the rest of the job -- including in steps
+      # that don't explicitly say `bash --` (e.g. Show diff below), since
+      # PATH is a job-wide env var, not something bash-specific. Cygwin's
+      # git then refuses to touch the yacp checkout at all ("detected
+      # dubious ownership in repository at '/cygdrive/...'", confirmed by
+      # a real run) -- actions/checkout (a native Windows/Node action)
+      # and Cygwin's own git disagree about whose file-ownership check
+      # the directory should satisfy. `--global` writes to `$HOME/
+      # .gitconfig`, and bash-invoked vs. plain steps have historically
+      # disagreed about what $HOME even is on this runner (see Configure
+      # cygport below) -- so this is set both ways rather than trusting
+      # either alone to cover every later step that touches yacp.
+      - name: Configure git safe.directory (Cygwin)
+        run: bash -c "git config --global --add safe.directory '*'"
+
+      - name: Configure git safe.directory (Windows)
+        run: git config --global --add safe.directory '*'
+
       # Must run after Cygwin is installed (and installed early, before
       # anything that could invoke `cygport fetch`, i.e. `xezat prep`
       # below): a bare `bash` on windows-latest resolves to Git for
