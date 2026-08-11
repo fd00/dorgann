@@ -610,17 +610,4 @@ jobs:
       # the one whose output survives.
       - name: Write job summary
         if: always()
-        shell: bash
-        run: |
-          {
-            echo "### dorgann: ${{ inputs.package }}"
-            echo
-            pr_url="${{ steps.create-pr.outputs.pull-request-url }}${{ steps.create-draft-pr.outputs.pull-request-url }}"
-            if [[ -n "$pr_url" ]]; then
-              echo "- yacp PR: $pr_url"
-            fi
-            issue_url="${{ steps.file-issue.outputs.issue_url }}${{ steps.close-issue.outputs.issue_url }}"
-            if [[ -n "$issue_url" ]]; then
-              echo "- build-failed Issue: $issue_url"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: bash -- scripts/write_job_summary.sh --package "${{ inputs.package }}" --pr-url "${{ steps.create-pr.outputs.pull-request-url }}${{ steps.create-draft-pr.outputs.pull-request-url }}" --issue-url "${{ steps.file-issue.outputs.issue_url }}${{ steps.close-issue.outputs.issue_url }}"
