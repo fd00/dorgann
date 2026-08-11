@@ -49,21 +49,21 @@ on:
   workflow_dispatch:
     inputs:
       package:
-        description: "Package directory name in yacp (e.g. googletest)"
+        description: "Package directory name in yacp (e.g. pkg)"
         required: true
         type: string
       version:
-        description: "New version (PV) to build. Required unless branch is given."
+        description: "New version (PV) to build (required unless branch is set)"
         required: false
         type: string
         default: ""
       branch:
-        description: "Branch-rebuild mode (doc/spec.md 4.6): an existing yacp branch to build as-is (e.g. dorgann/libucl-0.9.4), after a manual fix has been pushed onto it -- skips the version bump/rename and auto-detects the version instead. Leave empty for the normal fresh-bump flow."
+        description: "Rebuild an existing yacp branch as-is (doc/spec.md 4.6), e.g. dorgann/pkg-x.y.z"
         required: false
         type: string
         default: ""
       cygwin_packages:
-        description: "Extra Cygwin packages to install on top of auto-detected ones (space-separated, e.g. libfoo-devel)"
+        description: "Extra Cygwin packages to install on top of auto-detected ones (space-separated, e.g. pkg-devel)"
         required: false
         type: string
         default: ""
