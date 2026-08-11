@@ -11,13 +11,31 @@
 # and multi-megabyte binary blobs are exactly what a git history should
 # never accumulate.
 #
+# Also wraps make/ninja to force verbose build output (V=1 VERBOSE=1 /
+# -v), matching the maintainer's own local .cygportrc -- makes a real
+# compile failure's log actually show the failing command instead of
+# just "make: *** [Makefile:123: foo.o] Error 1".
+#
 # cygport reads this from (in order) $HOME/.config/cygport.conf,
 # $HOME/.cygport/cygport.conf, $HOME/.cygport.conf, or $HOME/.cygportrc --
-# see cygport's own data/cygport.conf for the full list.
+# see cygport's own data/cygport.conf for the full list. It's sourced as
+# a plain bash script, so the function overrides below take effect the
+# same way they would in an interactive shell's .bashrc.
 #
 # Usage: configure_cygport.sh (no arguments; run once, before any cygport
 # invocation)
 
 set -euo pipefail
 
-echo "DISTDIR=$HOME/distfiles" > "$HOME/.cygportrc"
+cat > "$HOME/.cygportrc" <<'EOF'
+DISTDIR=$HOME/distfiles
+
+make()
+{
+	/usr/bin/make V=1 VERBOSE=1 $*
+}
+ninja()
+{
+	/usr/bin/ninja -v $*
+}
+EOF
