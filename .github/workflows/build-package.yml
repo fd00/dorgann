@@ -137,6 +137,22 @@ jobs:
           # native Windows Ruby, whose RubyGems API cygport's script
           # doesn't expect (NoMethodError on Gem.default_dirs).
           packages: cygport util-linux sed gcc-core gcc-g++ python3 ruby rubygems
+          # Setting `site` at all replaces this action's own default
+          # (confirmed empty in action.yml itself -- the actual mirror
+          # fallback is hardcoded in the action's own implementation, not
+          # a declared input default), so the real mirror has to be
+          # spelled out here alongside dorgann's own gh-pages (chapter 3)
+          # -- otherwise this would only ever be able to see packages
+          # dorgann itself has published, losing the rest of Cygwin
+          # entirely. Lets a build depend on another package that's only
+          # ever been published here, not (yet, or at all) in the
+          # official archive.
+          #
+          # The literal fd0.app URL, not the plain <owner>.github.io one,
+          # since that's what's actually confirmed to work (doc/spec.md
+          # 3.1's account-level custom-domain caveat) -- needs updating if
+          # dorgann ever moves to a different org/domain.
+          site: "http://mirrors.kernel.org/sourceware/cygwin/ https://fd0.app/dorgann/"
 
       # Once Cygwin is installed, its own git ends up ahead of Git for
       # Windows on PATH for the rest of the job -- including in steps
@@ -232,6 +248,10 @@ jobs:
           # charlock_holmes, which needs ICU via pkg-config as
           # libicu-devel's icu-i18n/icu-io/icu-uc .pc files).
           packages: ${{ steps.depends.outputs.extra_packages }} ${{ inputs.cygwin_packages }} libicu-devel pkg-config zlib-devel ruby-devel libgit2-devel
+          # See Install Cygwin (base toolchain) above for why this is
+          # necessary at all -- same reasoning applies to every package
+          # install in this job.
+          site: "http://mirrors.kernel.org/sourceware/cygwin/ https://fd0.app/dorgann/"
 
       - name: Compute xezat cache info
         id: xezat-cache-info
