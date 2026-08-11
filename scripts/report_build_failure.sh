@@ -94,6 +94,9 @@ existing="$("$script_dir/find_failure_issue.sh" --repo "$repo" --package "$packa
 if [[ -n "$existing" ]]; then
   echo "Updating existing build-failed Issue #$existing for $package" >&2
   gh issue edit "$existing" --repo "$repo" --title "$title" --body-file "$body_file_native"
+  # `gh issue edit` doesn't reliably print the URL to stdout the way `gh
+  # issue create` does, so build it directly rather than depend on that.
+  issue_url="https://github.com/$repo/issues/$existing"
 else
   # `gh issue create --label` fails outright if the label doesn't already
   # exist in the repo (confirmed by a real run: "could not add label:
@@ -106,5 +109,12 @@ else
     --description "A dorgann build for this package failed" 2>/dev/null || true
 
   echo "Filing a new build-failed Issue for $package" >&2
-  gh issue create --repo "$repo" --title "$title" --body-file "$body_file_native" --label build-failed
+  # `gh issue create`'s own stdout on success is exactly the new Issue's
+  # URL, nothing else -- reused directly instead of a separate lookup.
+  issue_url="$(gh issue create --repo "$repo" --title "$title" --body-file "$body_file_native" --label build-failed)"
+fi
+
+echo "$issue_url"
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  echo "issue_url=$issue_url" >> "$GITHUB_OUTPUT"
 fi

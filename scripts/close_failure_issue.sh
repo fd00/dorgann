@@ -44,3 +44,9 @@ fi
 echo "Closing build-failed Issue #$existing for $package" >&2
 gh issue comment "$existing" --repo "$repo" --body "Resolved by a successful build: $run_url"
 gh issue close "$existing" --repo "$repo"
+
+issue_url="https://github.com/$repo/issues/$existing"
+echo "$issue_url"
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  echo "issue_url=$issue_url" >> "$GITHUB_OUTPUT"
+fi

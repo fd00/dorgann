@@ -540,6 +540,7 @@ jobs:
       # the fix up (skipping the bump, since it's already done) and
       # re-validates it for real.
       - name: Create draft Pull Request (on failure)
+        id: create-draft-pr
         if: failure() && (steps.bump.outcome == 'success' || steps.detect.outcome == 'success')
         uses: peter-evans/create-pull-request@v8
         with:
@@ -579,18 +580,47 @@ jobs:
       # this is simply skipped, and File failure Issue below (which does
       # have its own `if: failure()`) runs instead.
       - name: Close failure Issue
+        id: close-issue
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash -- scripts/close_failure_issue.sh --repo ${{ github.repository }} --package "${{ inputs.package }}" --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-      # Last step in the job, and the only one with `if: failure()` --
-      # doc/spec.md 4.5. Runs regardless of which earlier step failed
-      # (bump, cygport build, xezat, Create Pull Request, ...); the Issue
-      # just links back to this run rather than embedding a log excerpt
-      # (see doc/spec.md 4.5 for why), so which step it was is one click
-      # away rather than baked in here.
+      # Last step with actual work to do, and the only one with
+      # `if: failure()` -- doc/spec.md 4.5. Runs regardless of which
+      # earlier step failed (bump, cygport build, xezat, Create Pull
+      # Request, ...); the Issue just links back to this run rather than
+      # embedding a log excerpt (see doc/spec.md 4.5 for why), so which
+      # step it was is one click away rather than baked in here.
       - name: File failure Issue
+        id: file-issue
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash -- scripts/report_build_failure.sh --repo ${{ github.repository }} --package "${{ inputs.package }}" --version "${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}" --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      # Genuinely last step, if: always() so it runs whichever of the
+      # above actually fired. GitHub renders $GITHUB_STEP_SUMMARY as
+      # Markdown right at the top of the run page, unlike a plain log
+      # line, which is only visible after opening this specific job and
+      # scrolling to the right step.
+      #
+      # Each link is a concatenation of the (at most one non-empty) PR/
+      # Issue step outputs above, same pattern as the version/cygport_file
+      # outputs earlier in this file -- whichever step actually ran is
+      # the one whose output survives.
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### dorgann: ${{ inputs.package }}"
+            echo
+            pr_url="${{ steps.create-pr.outputs.pull-request-url }}${{ steps.create-draft-pr.outputs.pull-request-url }}"
+            if [[ -n "$pr_url" ]]; then
+              echo "- yacp PR: $pr_url"
+            fi
+            issue_url="${{ steps.file-issue.outputs.issue_url }}${{ steps.close-issue.outputs.issue_url }}"
+            if [[ -n "$issue_url" ]]; then
+              echo "- build-failed Issue: $issue_url"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
