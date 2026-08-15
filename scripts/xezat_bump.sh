@@ -5,6 +5,14 @@
 # since xezat reads the file-list (.lst) data cygport's install step
 # leaves behind under $T.
 #
+# If XEZAT_BUMP_MESSAGE is set (non-empty), it's passed as `xezat bump`'s
+# `-m` -- used by build-package.yml's `rebuild` input (same-version
+# toolchain rebuild, e.g. "Rebuild with gcc-14.2.0-1") to override
+# xezat's own default changelog message ("Version bump.", which wouldn't
+# say anything true here since PV didn't actually change). An env var
+# rather than a CLI flag here sidesteps having to shell-quote an
+# arbitrary message into this script's own invocation in build-package.yml.
+#
 # Usage:
 #   xezat_bump.sh --dir yacp/googletest --file googletest-1.18.0-1bl1.cygport
 
@@ -27,4 +35,8 @@ done
 cd "$dir"
 [[ -f "$cygport_file" ]] || { echo "No such file: $dir/$cygport_file" >&2; exit 1; }
 
-xezat bump "$cygport_file"
+if [[ -n "${XEZAT_BUMP_MESSAGE:-}" ]]; then
+  xezat bump "$cygport_file" -m "$XEZAT_BUMP_MESSAGE"
+else
+  xezat bump "$cygport_file"
+fi

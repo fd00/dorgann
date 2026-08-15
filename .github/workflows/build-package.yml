@@ -76,6 +76,11 @@ on:
         required: false
         type: number
         default: 10
+      rebuild:
+        description: "Rebuild the same version, bumping only the release number (1bl1 -> 1bl2) for a toolchain-only rebuild (e.g. newer gcc) with no source changes. Ignored if branch is set (or auto-detected)."
+        required: false
+        type: boolean
+        default: false
 
 # issues:write for report_build_failure.sh/close_failure_issue.sh
 # (doc/spec.md 4.5).
@@ -234,22 +239,36 @@ jobs:
         if: inputs.branch != '' || steps.auto-branch.outputs.branch != ''
         run: bash -- scripts/overlay_branch_package.sh --dir yacp --package "${{ inputs.package }}" --branch "${{ inputs.branch }}${{ steps.auto-branch.outputs.branch }}"
 
-      # Two mutually exclusive paths, selected by whether a branch --
-      # explicit or auto-detected above -- applies (doc/spec.md 4.6) --
-      # exactly one of these two steps runs. Every step below reads
-      # through the concatenation of both steps' outputs (e.g.
-      # "${{ steps.bump.outputs.X }}${{ steps.detect.outputs.X }}"),
+      # Three mutually exclusive paths now: a version bump, a branch
+      # rebuild (explicit or auto-detected above, doc/spec.md 4.6), or a
+      # same-version release rebuild (`rebuild` input, just below) --
+      # exactly one of Bump version / Bump release / Detect existing
+      # cygport's rename-or-not applies. Every step below still reads
+      # through the concatenation of just the first and last steps'
+      # outputs (e.g. "${{ steps.bump.outputs.X }}${{ steps.detect.outputs.X }}"),
       # which is always exactly one non-empty value since a skipped step's
-      # outputs are the empty string, not an error -- so nothing below
-      # needs to know which of the two paths actually ran.
+      # outputs are the empty string, not an error -- Bump release
+      # deliberately has no outputs of its own and instead lets Detect
+      # existing cygport (widened below to also cover it) pick up
+      # whatever it renamed on disk, so nothing below needs touching for
+      # this third path to slot in.
       - name: Bump version
         id: bump
-        if: inputs.branch == '' && steps.auto-branch.outputs.branch == ''
+        if: inputs.branch == '' && steps.auto-branch.outputs.branch == '' && inputs.rebuild != 'true'
         run: bash -- scripts/bump_version.sh --dir "yacp/${{ inputs.package }}" --version "${{ inputs.version }}"
 
-      - name: Detect existing cygport (branch-rebuild mode)
+      # Same-version rebuild (no branch involved): bumps only the release
+      # number (1bl1 -> 1bl2), for picking up a newer toolchain with no
+      # source changes -- unlike Bump version above, which refuses to
+      # touch a package already at the requested version. `branch`/auto-
+      # detection above always wins over `rebuild` if somehow both apply.
+      - name: Bump release (rebuild mode)
+        if: inputs.rebuild == 'true' && inputs.branch == '' && steps.auto-branch.outputs.branch == ''
+        run: bash -- scripts/bump_release.sh --dir "yacp/${{ inputs.package }}"
+
+      - name: Detect existing cygport (branch/release-rebuild mode)
         id: detect
-        if: inputs.branch != '' || steps.auto-branch.outputs.branch != ''
+        if: inputs.branch != '' || steps.auto-branch.outputs.branch != '' || inputs.rebuild == 'true'
         run: bash -- scripts/detect_cygport_file.sh --dir "yacp/${{ inputs.package }}"
 
       - name: Determine extra build dependencies
@@ -339,7 +358,19 @@ jobs:
       - name: Validate build via xezat
         run: bash -- scripts/xezat_validate.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
 
+      # Only meaningful for the `rebuild` input (Bump release above) --
+      # its changelog message names the toolchain a rebuild actually
+      # exists to pick up. gcc-core is always installed as part of the
+      # base toolchain (see Install Cygwin (base toolchain) above), so
+      # this doesn't need its own package install.
+      - name: Detect gcc-core version
+        id: gcc-version
+        if: inputs.rebuild == 'true'
+        run: bash -- scripts/gcc_version.sh
+
       - name: Update README via xezat
+        env:
+          XEZAT_BUMP_MESSAGE: ${{ inputs.rebuild == 'true' && format('Rebuild with gcc-{0}', steps.gcc-version.outputs.gcc_version) || '' }}
         run: bash -- scripts/xezat_bump.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
 
       # cygport's `install` step (above) already runs postinst as part of
