@@ -30,6 +30,15 @@ trap 'rm -rf "$repo_dir"' EXIT
 
 git clone --depth 1 https://github.com/fd00/xezat.git "$repo_dir"
 
+# The clone lands owner-only (rwx------), presumably because whichever
+# git actually wrote the files (see the /tmp note above -- it's not
+# always the same binary run to run) doesn't apply a world-readable mode
+# under Cygwin. `gem build` below still succeeds either way, but warns
+# "<file> is not world-readable" for every single file in the repo
+# without this -- gem authors are expected to ship world-readable files
+# since other users may `gem install` the built package.
+chmod -R a+rX "$repo_dir"
+
 # Defensive check, kept from diagnosing the /tmp mismatch above -- cheap
 # insurance against whatever the next surprise turns out to be.
 gemspec="$repo_dir/xezat.gemspec"
