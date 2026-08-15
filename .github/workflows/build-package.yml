@@ -32,11 +32,15 @@ name: build-package
 # under genuine Cygwin anyway, since it sources the real /usr/bin/cygport
 # as a bash script.
 #
+# xezat itself is installed from the HEAD of its own GitHub repository
+# (scripts/xezat_install.sh) rather than a pinned RubyGems.org release, so
+# unreleased fixes are always picked up.
+#
 # Compiling rugged/charlock_holmes's native extensions from scratch is
 # slow (cmake-building vendored libgit2, linking ICU), so the gem
 # install is cached across runs -- see scripts/xezat_cache_info.sh for
 # why the cache key includes a hash of every installed Cygwin package's
-# version rather than being a fixed string.
+# version (and xezat's own HEAD commit) rather than being a fixed string.
 #
 # Build dependencies are determined in two passes, mirroring how Cygwin's
 # own official CI (cygwin/scallywag) does it: a fixed base toolchain is
@@ -284,10 +288,10 @@ jobs:
           path: ${{ steps.xezat-cache-info.outputs.gem_home }}
           key: xezat-gem-${{ runner.os }}-${{ steps.xezat-cache-info.outputs.version_hash }}
 
-      - name: Install xezat
+      - name: Install xezat (latest from GitHub)
         env:
           RUGGED_USE_SYSTEM_LIBRARIES: "1"
-        run: bash -c "gem install --no-document xezat"
+        run: bash -- scripts/xezat_install.sh
 
       - name: xezat prep
         run: bash -- scripts/xezat_prep.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"

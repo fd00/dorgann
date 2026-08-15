@@ -23,13 +23,21 @@
 #     Appending it to GITHUB_PATH here makes it available to every later
 #     step in the job, not just the current one.
 #   - version_hash: a fingerprint of every installed Cygwin package's
-#     version. Native extensions are compiled against specific library
+#     version, plus xezat's own GitHub HEAD commit (see
+#     scripts/xezat_install.sh, which installs straight from
+#     https://github.com/fd00/xezat.git rather than a pinned RubyGems.org
+#     release). Native extensions are compiled against specific library
 #     ABIs (Ruby itself, ICU, ...), and cygwin-install-action always
 #     installs whatever's current on the mirror rather than pinned
 #     versions, so a cached binary from a previous run could silently be
-#     ABI-incompatible with a newer install. Folding this into the cache
-#     key means any such change naturally invalidates the cache instead
-#     of restoring a broken extension.
+#     ABI-incompatible with a newer install; folding the Cygwin package
+#     versions into the cache key means any such change naturally
+#     invalidates the cache instead of restoring a broken extension.
+#     Folding in xezat's HEAD commit the same way means a new xezat
+#     commit invalidates the cache too -- otherwise, once a run had cached
+#     some old HEAD's install, xezat_install.sh cloning a newer HEAD would
+#     never actually get used: the cache restore runs before it and would
+#     keep winning.
 #
 # Usage: xezat_cache_info.sh (no arguments; run after all Cygwin packages
 # needed for xezat are installed)
@@ -42,7 +50,8 @@ set -euo pipefail
 
 gem_home="$(cygpath -w "$(ruby -e 'print Gem.user_dir')")"
 gem_bindir="$(cygpath -w "$(ruby -e 'print File.join(Dir.home, "bin")')")"
-version_hash="$(cygcheck -c | sha256sum | cut -d' ' -f1)"
+xezat_sha="$(git ls-remote https://github.com/fd00/xezat.git HEAD | cut -f1)"
+version_hash="$( { cygcheck -c; echo "$xezat_sha"; } | sha256sum | cut -d' ' -f1)"
 
 echo "gem_home=$gem_home"
 echo "gem_bindir=$gem_bindir"
