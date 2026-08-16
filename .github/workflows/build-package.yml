@@ -254,7 +254,7 @@ jobs:
       # this third path to slot in.
       - name: Bump version
         id: bump
-        if: inputs.branch == '' && steps.auto-branch.outputs.branch == '' && inputs.rebuild != 'true'
+        if: inputs.branch == '' && steps.auto-branch.outputs.branch == '' && !inputs.rebuild
         run: bash -- scripts/bump_version.sh --dir "yacp/${{ inputs.package }}" --version "${{ inputs.version }}"
 
       # Same-version rebuild (no branch involved): bumps only the release
@@ -263,12 +263,12 @@ jobs:
       # touch a package already at the requested version. `branch`/auto-
       # detection above always wins over `rebuild` if somehow both apply.
       - name: Bump release (rebuild mode)
-        if: inputs.rebuild == 'true' && inputs.branch == '' && steps.auto-branch.outputs.branch == ''
+        if: inputs.rebuild && inputs.branch == '' && steps.auto-branch.outputs.branch == ''
         run: bash -- scripts/bump_release.sh --dir "yacp/${{ inputs.package }}"
 
       - name: Detect existing cygport (branch/release-rebuild mode)
         id: detect
-        if: inputs.branch != '' || steps.auto-branch.outputs.branch != '' || inputs.rebuild == 'true'
+        if: inputs.branch != '' || steps.auto-branch.outputs.branch != '' || inputs.rebuild
         run: bash -- scripts/detect_cygport_file.sh --dir "yacp/${{ inputs.package }}"
 
       - name: Determine extra build dependencies
@@ -365,12 +365,12 @@ jobs:
       # this doesn't need its own package install.
       - name: Detect gcc-core version
         id: gcc-version
-        if: inputs.rebuild == 'true'
+        if: inputs.rebuild
         run: bash -- scripts/gcc_version.sh
 
       - name: Update README via xezat
         env:
-          XEZAT_BUMP_MESSAGE: ${{ inputs.rebuild == 'true' && format('Rebuild with gcc-{0}', steps.gcc-version.outputs.gcc_version) || '' }}
+          XEZAT_BUMP_MESSAGE: ${{ inputs.rebuild && format('Rebuild with gcc-{0}', steps.gcc-version.outputs.gcc_version) || '' }}
         run: bash -- scripts/xezat_bump.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
 
       # cygport's `install` step (above) already runs postinst as part of
