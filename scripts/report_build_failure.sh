@@ -12,17 +12,26 @@
 # reads the version back out of this same dorgann-meta comment to decide
 # whether upstream has since published something newer worth retrying.
 #
-# Deliberately does NOT embed a log excerpt (doc/spec.md 4.5's original
-# design called for one; dropped after actually using this against a
-# couple of real failures) -- a fixed line count is either too long for
-# the common case or too short to contain the actual error for a build
-# that fails many steps in, and the run itself keeps the complete log for
-# the full retention period anyway, which is plenty of time to
-# investigate. The Issue just links to the run instead.
+# Deliberately does NOT embed a general log excerpt (doc/spec.md 4.5's
+# original design called for one; dropped after actually using this
+# against a couple of real failures) -- a fixed line count is either too
+# long for the common case or too short to contain the actual error for
+# a build that fails many steps in, and the run itself keeps the
+# complete log for the full retention period anyway, which is plenty of
+# time to investigate. The Issue just links to the run instead.
+#
+# --diagnostic-file is a narrow, deliberate exception to that: unlike an
+# arbitrary log excerpt, scripts/diagnose_patch_failure.sh's output is
+# self-contained and inherently bounded (a handful of patch-level dry-run
+# attempts for one file), so it doesn't have the same "how many lines"
+# problem -- and having it right in the Issue body, not one click away
+# in the run log, is what actually makes the Issue usable by whoever (or
+# whatever -- e.g. an AI agent assigned the Issue) fixes it next.
 #
 # Usage:
 #   report_build_failure.sh --repo fd00/dorgann --package foo --version 1.2.3 \
-#     --run-url https://github.com/fd00/dorgann/actions/runs/123456789
+#     --run-url https://github.com/fd00/dorgann/actions/runs/123456789 \
+#     [--diagnostic-file /tmp/patch-diagnostic.txt]
 
 set -euo pipefail
 
@@ -30,6 +39,7 @@ repo=""
 package=""
 version=""
 run_url=""
+diagnostic_file=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -37,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     --package) package="$2"; shift 2 ;;
     --version) version="$2"; shift 2 ;;
     --run-url) run_url="$2"; shift 2 ;;
+    --diagnostic-file) diagnostic_file="$2"; shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -67,6 +78,15 @@ trap 'rm -f "$body_file"' EXIT
   printf '| Field   | Value |\n|---------|-------|\n'
   printf '| Package | %s |\n| Version | %s |\n\n' "$package" "$version"
   printf 'Run: %s\n' "$run_url"
+  # diagnose_patch_failure.sh only ever produces this file when it found
+  # both a .src.patch and cygport's own unpacked source tree to retry it
+  # against -- empty/missing here just means this failure wasn't that
+  # kind (or wasn't a patch-apply failure at all), not an error.
+  if [[ -n "$diagnostic_file" && -s "$diagnostic_file" ]]; then
+    printf '\n<details><summary>Patch failure diagnostic</summary>\n\n```\n'
+    cat "$diagnostic_file"
+    printf '```\n\n</details>\n'
+  fi
 } >"$body_file"
 
 # "<PN>-<PV>", matching the naming convention build-package.yml's own

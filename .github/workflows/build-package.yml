@@ -313,7 +313,25 @@ jobs:
         run: bash -- scripts/xezat_install.sh
 
       - name: xezat prep
+        id: prep
         run: bash -- scripts/xezat_prep.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
+
+      # cygport's own "patch ... will not apply" (from xezat prep above,
+      # which is what actually invokes `cygport ... prep`) never says
+      # which file/hunk/line conflicts -- cygpatch() (lib/src_prep.cygpart)
+      # discards the patch tool's own diagnostic at every level it tries
+      # (confirmed against cygport's source, and against a real failure,
+      # fd00/dorgann#23). Rerunning the dry-run ourselves, without that
+      # suppression, against the same unpacked source tree (still on disk
+      # here -- a step failing doesn't tear down the rest of the job's
+      # filesystem) surfaces the real mismatch. Scoped to prep's own
+      # failure specifically (not just failure() generally, e.g. a later
+      # cygport compile failure has nothing to do with patch application)
+      # via steps.prep.outcome.
+      - name: Diagnose patch failure
+        id: diagnose-patch
+        if: failure() && steps.prep.outcome == 'failure'
+        run: bash -- scripts/diagnose_patch_failure.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
 
       - name: cygport compile
         run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step compile
@@ -631,7 +649,7 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash -- scripts/report_build_failure.sh --repo ${{ github.repository }} --package "${{ inputs.package }}" --version "${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}" --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: bash -- scripts/report_build_failure.sh --repo ${{ github.repository }} --package "${{ inputs.package }}" --version "${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}" --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --diagnostic-file "${{ steps.diagnose-patch.outputs.diagnostic_file }}"
 
       # Genuinely last step, if: always() so it runs whichever of the
       # above actually fired. GitHub renders $GITHUB_STEP_SUMMARY as
