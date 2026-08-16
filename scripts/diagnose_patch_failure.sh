@@ -53,6 +53,14 @@ if [[ ! -f "$patch_file" ]]; then
   exit 0
 fi
 
+# `patch -d "$S"` below cd's to $S *before* resolving -i's own argument,
+# so a relative patch_file (as found above, relative to the package
+# directory) would otherwise get looked up under $S instead and always
+# report "No such file or directory" -- confirmed by a real run
+# (fd00/dorgann#23, io_lib 1.16.0). Absolute sidesteps that regardless of
+# which directory -d switches into.
+patch_file="$(pwd)/$patch_file"
+
 # Same `cygport <file> vars <NAME>` mechanism cygport_depends.sh already
 # uses to read cygport-computed variables without going through xezat.
 src_decl="$(cygport "$cygport_file" vars S 2>/dev/null)"
