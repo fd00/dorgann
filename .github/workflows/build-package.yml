@@ -621,9 +621,18 @@ jobs:
       # re-running this workflow with `branch` set to this same name picks
       # the fix up (skipping the bump, since it's already done) and
       # re-validates it for real.
+      #
+      # validate_only is excluded explicitly here too (matching Create
+      # Pull Request above) rather than relying on there being no diff to
+      # push -- confirmed by a real run (socket++ 1.12.13) that
+      # peter-evans/create-pull-request happens to no-op gracefully
+      # ("Branch ... is not ahead of base 'master' and will not be
+      # created") when validate_only genuinely has nothing to commit, but
+      # that's an implicit consequence of there being no bump, not a
+      # guarantee -- explicit is safer than depending on it.
       - name: Create draft Pull Request (on failure)
         id: create-draft-pr
-        if: failure() && (steps.bump.outcome == 'success' || steps.detect.outcome == 'success')
+        if: failure() && (steps.bump.outcome == 'success' || steps.detect.outcome == 'success') && !inputs.validate_only
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.YACP_SECRET }}
