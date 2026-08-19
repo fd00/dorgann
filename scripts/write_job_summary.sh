@@ -24,20 +24,29 @@
 # whose output survives -- so an empty string here just means that kind
 # of link doesn't apply to this run, not an error.
 #
+# artifact_id is Upload dist artifact's own step output -- always passed
+# when set, but only worth printing a ready-to-run publish command for
+# when there's no PR (validate_only, doc/spec.md 4.4.2's "semi-automated"
+# path assumes a PR body carries this same command otherwise, e.g. Create
+# Pull Request's own body already includes it) -- otherwise this would
+# just be a redundant duplicate of what the PR body already says.
+#
 # Usage:
-#   write_job_summary.sh --package foo --pr-url <url-or-empty> --issue-url <url-or-empty>
+#   write_job_summary.sh --package foo --pr-url <url-or-empty> --issue-url <url-or-empty> [--artifact-id <id-or-empty>]
 
 set -euo pipefail
 
 package=""
 pr_url=""
 issue_url=""
+artifact_id=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --package) package="$2"; shift 2 ;;
     --pr-url) pr_url="$2"; shift 2 ;;
     --issue-url) issue_url="$2"; shift 2 ;;
+    --artifact-id) artifact_id="$2"; shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -53,5 +62,13 @@ done
   fi
   if [[ -n "$issue_url" ]]; then
     echo "- build-failed Issue: $issue_url"
+  fi
+  if [[ -n "$artifact_id" && -z "$pr_url" ]]; then
+    echo "- dist artifact: $artifact_id (no PR was created -- validate_only)"
+    echo
+    echo "To publish this build to gh-pages:"
+    echo '```'
+    echo "gh workflow run publish.yml -f artifact_id=$artifact_id --repo ${GITHUB_REPOSITORY:-fd00/dorgann}"
+    echo '```'
   fi
 } >> "$GITHUB_STEP_SUMMARY"

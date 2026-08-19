@@ -81,6 +81,11 @@ on:
         required: false
         type: boolean
         default: false
+      validate_only:
+        description: "Build the package exactly as currently committed in yacp (no version/release bump), skip yacp PR creation entirely, and just upload the dist artifact -- for validating/publishing an already-merged fix dorgann never actually built (e.g. a branch-rebuild fix pushed and merged without a re-run). Ignored if branch is set (or auto-detected) or rebuild is set."
+        required: false
+        type: boolean
+        default: false
 
 # issues:write for report_build_failure.sh/close_failure_issue.sh
 # (doc/spec.md 4.5).
@@ -239,22 +244,25 @@ jobs:
         if: inputs.branch != '' || steps.auto-branch.outputs.branch != ''
         run: bash -- scripts/overlay_branch_package.sh --dir yacp --package "${{ inputs.package }}" --branch "${{ inputs.branch }}${{ steps.auto-branch.outputs.branch }}"
 
-      # Three mutually exclusive paths now: a version bump, a branch
-      # rebuild (explicit or auto-detected above, doc/spec.md 4.6), or a
-      # same-version release rebuild (`rebuild` input, just below) --
+      # Four mutually exclusive paths now: a version bump, a branch
+      # rebuild (explicit or auto-detected above, doc/spec.md 4.6), a
+      # same-version release rebuild (`rebuild`), or a validate-only build
+      # of whatever's already committed (`validate_only`, for validating/
+      # publishing an already-merged fix dorgann never actually built) --
       # exactly one of Bump version / Bump release / Detect existing
       # cygport's rename-or-not applies. Every step below still reads
       # through the concatenation of just the first and last steps'
       # outputs (e.g. "${{ steps.bump.outputs.X }}${{ steps.detect.outputs.X }}"),
       # which is always exactly one non-empty value since a skipped step's
-      # outputs are the empty string, not an error -- Bump release
-      # deliberately has no outputs of its own and instead lets Detect
-      # existing cygport (widened below to also cover it) pick up
-      # whatever it renamed on disk, so nothing below needs touching for
-      # this third path to slot in.
+      # outputs are the empty string, not an error -- Bump release and
+      # validate_only deliberately have no outputs of their own and
+      # instead let Detect existing cygport (widened below to also cover
+      # both) pick up whatever's on disk (renamed, for Bump release; as-is
+      # from the yacp checkout, for validate_only), so nothing below needs
+      # touching for either to slot in.
       - name: Bump version
         id: bump
-        if: inputs.branch == '' && steps.auto-branch.outputs.branch == '' && !inputs.rebuild
+        if: inputs.branch == '' && steps.auto-branch.outputs.branch == '' && !inputs.rebuild && !inputs.validate_only
         run: bash -- scripts/bump_version.sh --dir "yacp/${{ inputs.package }}" --version "${{ inputs.version }}"
 
       # Same-version rebuild (no branch involved): bumps only the release
@@ -263,12 +271,12 @@ jobs:
       # touch a package already at the requested version. `branch`/auto-
       # detection above always wins over `rebuild` if somehow both apply.
       - name: Bump release (rebuild mode)
-        if: inputs.rebuild && inputs.branch == '' && steps.auto-branch.outputs.branch == ''
+        if: inputs.rebuild && inputs.branch == '' && steps.auto-branch.outputs.branch == '' && !inputs.validate_only
         run: bash -- scripts/bump_release.sh --dir "yacp/${{ inputs.package }}"
 
       - name: Detect existing cygport (branch/release-rebuild mode)
         id: detect
-        if: inputs.branch != '' || steps.auto-branch.outputs.branch != '' || inputs.rebuild
+        if: inputs.branch != '' || steps.auto-branch.outputs.branch != '' || inputs.rebuild || inputs.validate_only
         run: bash -- scripts/detect_cygport_file.sh --dir "yacp/${{ inputs.package }}"
 
       - name: Determine extra build dependencies
@@ -386,7 +394,14 @@ jobs:
         if: inputs.rebuild
         run: bash -- scripts/gcc_version.sh
 
+      # Skipped entirely for validate_only: there's no PR to carry a
+      # rewritten README to, and the changelog already has whatever entry
+      # a real (or previously-failed) build already gave it -- rewriting
+      # it here (xezat's own default "Version bump." message, since no
+      # rebuild-specific one applies) would just clobber that with a
+      # message that isn't true, nothing was bumped.
       - name: Update README via xezat
+        if: ${{ !inputs.validate_only }}
         env:
           XEZAT_BUMP_MESSAGE: ${{ inputs.rebuild && format('Rebuild with gcc-{0}', steps.gcc-version.outputs.gcc_version) || '' }}
         run: bash -- scripts/xezat_bump.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
@@ -402,17 +417,26 @@ jobs:
       # into $D, and package needs to run again too so the actual dist
       # archive picks up that change -- otherwise the shipped package
       # would carry the stale changelog forever.
+      # Both skipped for validate_only along with Update README via xezat
+      # above -- there's no updated README to re-embed, so the package
+      # step above (before it, using whatever README was already
+      # committed) is already the real dist artifact.
       - name: cygport postinst
+        if: ${{ !inputs.validate_only }}
         run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step postinst
 
       - name: cygport package (with updated README)
+        if: ${{ !inputs.validate_only }}
         run: bash -- scripts/cygport_build.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}" --step package
 
       # xezat bump only rewrites the build tree's own README copy ($C),
       # never the package directory's tracked one -- see xezat_port.sh for
       # why. `xezat port` is what copies it (plus the cygport file itself
-      # and any src.patch) back.
+      # and any src.patch) back. Skipped for validate_only: nothing was
+      # bumped/rewritten to port back, and there's no PR to carry it
+      # to anyway.
       - name: Copy build results back via xezat port
+        if: ${{ !inputs.validate_only }}
         run: bash -- scripts/xezat_port.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
 
       # Mainly so a run's log makes it easy to eyeball whether xezat
@@ -528,6 +552,7 @@ jobs:
       # load-bearing.
       - name: Create Pull Request
         id: create-pr
+        if: ${{ !inputs.validate_only }}
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.YACP_SECRET }}
@@ -573,8 +598,12 @@ jobs:
       # bump-mode PR is never a draft in the first place (Create draft
       # Pull Request below only runs on the failure path), so this is a
       # harmless no-op for that case. `gh pr ready` on an already-ready PR
-      # is idempotent.
+      # is idempotent. Skipped for validate_only along with Create Pull
+      # Request above -- steps.create-pr.outputs.pull-request-number is
+      # empty when that step didn't run, and `gh pr ready` with an empty
+      # argument would just error.
       - name: Mark Pull Request ready for review
+        if: ${{ !inputs.validate_only }}
         env:
           GH_TOKEN: ${{ secrets.YACP_SECRET }}
         run: gh pr ready ${{ steps.create-pr.outputs.pull-request-number }} --repo fd00/yacp
@@ -663,4 +692,4 @@ jobs:
       # the one whose output survives.
       - name: Write job summary
         if: always()
-        run: bash -- scripts/write_job_summary.sh --package "${{ inputs.package }}" --pr-url "${{ steps.create-pr.outputs.pull-request-url }}${{ steps.create-draft-pr.outputs.pull-request-url }}" --issue-url "${{ steps.file-issue.outputs.issue_url }}${{ steps.close-issue.outputs.issue_url }}"
+        run: bash -- scripts/write_job_summary.sh --package "${{ inputs.package }}" --pr-url "${{ steps.create-pr.outputs.pull-request-url }}${{ steps.create-draft-pr.outputs.pull-request-url }}" --issue-url "${{ steps.file-issue.outputs.issue_url }}${{ steps.close-issue.outputs.issue_url }}" --artifact-id "${{ steps.upload.outputs.artifact-id }}"
