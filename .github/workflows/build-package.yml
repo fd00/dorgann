@@ -320,6 +320,18 @@ jobs:
           RUGGED_USE_SYSTEM_LIBRARIES: "1"
         run: bash -- scripts/xezat_install.sh
 
+      # xezat's own `bashvar` (used by prep/bump/validate/port alike, via
+      # Xezat#variables) dies outright on a single invalid UTF-8 byte
+      # anywhere in cygport's internal variable dump, not just this
+      # package's own cygport file's variables (confirmed against a real
+      # failure, libgedit-amtk 5.10.0, and against that package's
+      # committed cygport file decoding as clean UTF-8 on its own, ruling
+      # out the package's own content as the source). See
+      # scripts/bashvar_diagnostic_patch.rb for the full story and why it
+      # never logs variable values, only names/byte positions.
+      - name: Configure bashvar diagnostic patch
+        run: bash -- scripts/configure_bashvar_diagnostic.sh
+
       - name: xezat prep
         id: prep
         run: bash -- scripts/xezat_prep.sh --dir "yacp/${{ inputs.package }}" --file "${{ steps.bump.outputs.cygport_file }}${{ steps.detect.outputs.cygport_file }}"
