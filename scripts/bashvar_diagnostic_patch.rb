@@ -15,7 +15,7 @@
 # variable or why.
 #
 # Deliberately never logs variable VALUES, only names/byte positions --
-# this repo's CI logs are public (yacp-dev/dist, fd00/yacp), and
+# this repo's CI logs are public (yacp-dev/dist, yacp-dev/ports), and
 # `compgen -v` can pick up ambient runner-injected tokens (e.g.
 # ACTIONS_RUNTIME_TOKEN) that GitHub Actions' own secret-masking isn't
 # guaranteed to cover, since masking is keyed off exact known `secrets.*`

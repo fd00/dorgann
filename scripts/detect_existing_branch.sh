@@ -8,7 +8,7 @@
 # bump_version.sh's own "already at this version" refusal.
 #
 # Usage:
-#   detect_existing_branch.sh --repo fd00/yacp --package foo --version 1.2.3
+#   detect_existing_branch.sh --repo yacp-dev/ports --package foo --version 1.2.3
 # Output: prints the branch name if it exists, and if GITHUB_OUTPUT is
 # set, appends `branch=<name>` there; prints nothing (exit 0) if not.
 

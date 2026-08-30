@@ -102,7 +102,7 @@ jobs:
       # file directly ("$'\r': command not found") -- including yacp's own
       # .cygport files, which cygport itself sources as a bash script.
       # dorgann's own files are additionally covered by .gitattributes,
-      # but that only applies within this repo, not the fd00/yacp checkout
+      # but that only applies within this repo, not the yacp-dev/ports checkout
       # below, so this has to be set globally before either checkout runs.
       - name: Disable line-ending conversion on checkout
         run: git config --global core.autocrlf false
@@ -113,9 +113,9 @@ jobs:
       - name: Checkout yacp
         uses: actions/checkout@v7
         with:
-          repository: fd00/yacp
+          repository: yacp-dev/ports
           path: yacp
-          # Always fd00/yacp's own default branch, even in branch-rebuild
+          # Always yacp-dev/ports's own default branch, even in branch-rebuild
           # mode (doc/spec.md 4.6) -- checking out `inputs.branch` here
           # directly was tried first and broke peter-evans/create-pull-
           # request's own base-branch reconciliation (confirmed by a real
@@ -128,7 +128,7 @@ jobs:
           #
           # dorgann's own default GITHUB_TOKEN is scoped to dorgann only
           # and can't push to yacp -- YACP_SECRET is a fine-grained PAT
-          # scoped to fd00/yacp with contents:write/pull-requests:write
+          # scoped to yacp-dev/ports with contents:write/pull-requests:write
           # (doc/spec.md 4.4.1). Needed on checkout (not just on the
           # Create Pull Request step below) since that's what determines
           # which credentials `git push` inside this checkout uses.
@@ -229,7 +229,7 @@ jobs:
         if: inputs.branch == '' && inputs.version != ''
         env:
           GH_TOKEN: ${{ secrets.YACP_SECRET }}
-        run: bash -- scripts/detect_existing_branch.sh --repo fd00/yacp --package "${{ inputs.package }}" --version "${{ inputs.version }}"
+        run: bash -- scripts/detect_existing_branch.sh --repo yacp-dev/ports --package "${{ inputs.package }}" --version "${{ inputs.version }}"
 
       # Branch-rebuild mode (doc/spec.md 4.6): brings the target branch's
       # version of the package directory in as a plain uncommitted diff
@@ -618,7 +618,7 @@ jobs:
         if: ${{ !inputs.validate_only }}
         env:
           GH_TOKEN: ${{ secrets.YACP_SECRET }}
-        run: gh pr ready ${{ steps.create-pr.outputs.pull-request-number }} --repo fd00/yacp
+        run: gh pr ready ${{ steps.create-pr.outputs.pull-request-number }} --repo yacp-dev/ports
 
       # Branch-rebuild mode's entry point (doc/spec.md 4.6). Mirrors
       # Create Pull Request above (same deterministic branch name, so
