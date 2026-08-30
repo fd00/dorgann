@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Surfaces exactly which hunk of a .src.patch conflicts, for cygport's
 # own "patch ... will not apply" failure (lib/src_prep.cygpart's
-# cygpatch(), confirmed against a real run -- fd00/dorgann#23, io_lib
+# cygpatch(), confirmed against a real run -- yacp-dev/dist#23, io_lib
 # 1.16.0). cygpatch() tries patch levels 0 through 5, each via
 # `patch -N -s --dry-run -p<level> -i <patchfile> &> /dev/null` --
 # both -s and the /dev/null redirect discard the patch tool's own
@@ -57,7 +57,7 @@ fi
 # so a relative patch_file (as found above, relative to the package
 # directory) would otherwise get looked up under $S instead and always
 # report "No such file or directory" -- confirmed by a real run
-# (fd00/dorgann#23, io_lib 1.16.0). Absolute sidesteps that regardless of
+# (yacp-dev/dist#23, io_lib 1.16.0). Absolute sidesteps that regardless of
 # which directory -d switches into.
 patch_file="$(pwd)/$patch_file"
 

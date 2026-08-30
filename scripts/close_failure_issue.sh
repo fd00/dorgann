@@ -10,8 +10,8 @@
 # `if: failure()` step.
 #
 # Usage:
-#   close_failure_issue.sh --repo fd00/dorgann --package foo \
-#     --run-url https://github.com/fd00/dorgann/actions/runs/123456789
+#   close_failure_issue.sh --repo yacp-dev/dist --package foo \
+#     --run-url https://github.com/yacp-dev/dist/actions/runs/123456789
 
 set -euo pipefail
 

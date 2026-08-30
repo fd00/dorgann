@@ -7,7 +7,7 @@
 # .strip on the WHOLE blob (bashvar-0.1.1's lib/bashvar.rb:8), so one bad
 # byte in ANY variable (this dumps every shell variable in scope, not
 # just this package's own cygport ones -- confirmed against a real
-# failure, libgedit-amtk 5.10.0, fd00/dorgann's own build-package.yml run
+# failure, libgedit-amtk 5.10.0, yacp-dev/dist's own build-package.yml run
 # 32853901332, and against the committed cygport file itself decoding as
 # clean UTF-8, ruling out the package's own content) kills parsing
 # entirely, with cygport prep (and xezat bump/validate/port, which all
@@ -15,7 +15,7 @@
 # variable or why.
 #
 # Deliberately never logs variable VALUES, only names/byte positions --
-# this repo's CI logs are public (fd00/dorgann, fd00/yacp), and
+# this repo's CI logs are public (yacp-dev/dist, fd00/yacp), and
 # `compgen -v` can pick up ambient runner-injected tokens (e.g.
 # ACTIONS_RUNTIME_TOKEN) that GitHub Actions' own secret-masking isn't
 # guaranteed to cover, since masking is keyed off exact known `secrets.*`

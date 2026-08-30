@@ -29,8 +29,8 @@
 # whatever -- e.g. an AI agent assigned the Issue) fixes it next.
 #
 # Usage:
-#   report_build_failure.sh --repo fd00/dorgann --package foo --version 1.2.3 \
-#     --run-url https://github.com/fd00/dorgann/actions/runs/123456789 \
+#   report_build_failure.sh --repo yacp-dev/dist --package foo --version 1.2.3 \
+#     --run-url https://github.com/yacp-dev/dist/actions/runs/123456789 \
 #     [--diagnostic-file /tmp/patch-diagnostic.txt]
 
 set -euo pipefail

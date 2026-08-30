@@ -3,7 +3,7 @@
 # (root path), creating that configuration if it doesn't exist yet.
 # Idempotent -- safe to run on every publish, not just the first.
 #
-# Usage: ensure_pages_enabled.sh --repo fd00/dorgann
+# Usage: ensure_pages_enabled.sh --repo yacp-dev/dist
 
 set -euo pipefail
 

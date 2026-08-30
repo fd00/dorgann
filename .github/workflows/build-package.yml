@@ -341,7 +341,7 @@ jobs:
       # which file/hunk/line conflicts -- cygpatch() (lib/src_prep.cygpart)
       # discards the patch tool's own diagnostic at every level it tries
       # (confirmed against cygport's source, and against a real failure,
-      # fd00/dorgann#23). Rerunning the dry-run ourselves, without that
+      # yacp-dev/dist#23). Rerunning the dry-run ourselves, without that
       # suppression, against the same unpacked source tree (still on disk
       # here -- a step failing doesn't tear down the rest of the job's
       # filesystem) surfaces the real mismatch. Scoped to prep's own
@@ -595,7 +595,7 @@ jobs:
           # human-facing code block. artifact-id is actions/upload-
           # artifact's own step output (v4+), not something computed here.
           body: |
-            Version `${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}`, built and validated by [dorgann](https://github.com/fd00/dorgann).
+            Version `${{ steps.bump.outputs.version }}${{ steps.detect.outputs.version }}`, built and validated by [dorgann](https://github.com/yacp-dev/dist).
 
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 

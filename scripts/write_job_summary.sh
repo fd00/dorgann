@@ -68,7 +68,7 @@ done
     echo
     echo "To publish this build to gh-pages:"
     echo '```'
-    echo "gh workflow run publish.yml -f artifact_id=$artifact_id --repo ${GITHUB_REPOSITORY:-fd00/dorgann}"
+    echo "gh workflow run publish.yml -f artifact_id=$artifact_id --repo ${GITHUB_REPOSITORY:-yacp-dev/dist}"
     echo '```'
   fi
 } >> "$GITHUB_STEP_SUMMARY"

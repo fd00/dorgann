@@ -11,7 +11,7 @@
 # way, publish_gh_pages.sh needs push credentials in this same directory
 # later).
 #
-# Usage: checkout_gh_pages.sh --repo fd00/dorgann --dir gh-pages
+# Usage: checkout_gh_pages.sh --repo yacp-dev/dist --dir gh-pages
 
 set -euo pipefail
 

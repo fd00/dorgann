@@ -12,7 +12,7 @@
 # breaks). JSON is decoded with jq --arg rather than interpolated into a
 # jq program string, so a package name can't break out of the filter.
 #
-# Usage: find_failure_issue.sh --repo fd00/dorgann --package foo
+# Usage: find_failure_issue.sh --repo yacp-dev/dist --package foo
 # Output: the issue number on stdout if found; nothing (exit 0) if not.
 
 set -euo pipefail

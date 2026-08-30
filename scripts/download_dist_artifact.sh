@@ -14,7 +14,7 @@
 # package needs to be rebuilt instead.
 #
 # Usage:
-#   download_dist_artifact.sh --repo fd00/dorgann --artifact-id 12345 --dest artifact
+#   download_dist_artifact.sh --repo yacp-dev/dist --artifact-id 12345 --dest artifact
 
 set -euo pipefail
 
