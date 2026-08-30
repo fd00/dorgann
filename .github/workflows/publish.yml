@@ -89,6 +89,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash -- scripts/checkout_gh_pages.sh --repo ${{ github.repository }} --dir gh-pages
 
+      # Custom domain for `setup-x86_64.exe --site`: dist.yacp.dev
+      # (DNS: a CNAME record for dist.yacp.dev pointing at
+      # yacp-dev.github.io, set up outside this repo). See
+      # ensure_gh_pages_cname.sh's own header for why this needs to run
+      # every publish rather than being a one-time setup step.
+      - name: Configure custom domain (CNAME)
+        run: bash -- scripts/ensure_gh_pages_cname.sh --dir gh-pages --domain dist.yacp.dev
+
       - name: Lay out release area
         id: layout
         run: bash -- scripts/layout_release_area.sh --artifact-dir artifact --gh-pages-dir gh-pages
